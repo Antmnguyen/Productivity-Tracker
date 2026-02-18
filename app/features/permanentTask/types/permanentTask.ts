@@ -34,6 +34,9 @@ export interface PermanentTask {
 
   /** Completion status (instances only) */
   completed?: boolean;
+
+  /** Category ID (foreign key to categories table) */
+  categoryId?: string;
 }
 
 /**

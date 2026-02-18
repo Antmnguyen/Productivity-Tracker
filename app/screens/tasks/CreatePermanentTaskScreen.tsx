@@ -134,7 +134,6 @@ export const CreatePermanentTaskScreen: React.FC<CreatePermanentTaskScreenProps>
 
     try {
       // Create the permanent task template via taskActions
-      // TODO: Wire categoryId to permanent task storage in backend
       const newTemplate = await createTask(
         formData.templateTitle,
         'permanent',

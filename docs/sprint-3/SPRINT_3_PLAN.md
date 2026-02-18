@@ -102,21 +102,21 @@ Reusable CategorySelector component for both one-off and permanent tasks.
 
 ### 3.5 Permanent Task Category Backend
 **Priority:** High
-**Status:** [ ] Not Started
+**Status:** [x] Complete
 
 Wire categoryId to permanent task storage and ensure completion updates stats.
 
 **Requirements:**
-- [ ] Add categoryId to permanent_templates table
-- [ ] Add categoryId to permanent_instances table
-- [ ] Update permanentTaskStorage to save/read categoryId
-- [ ] Update handlePermanentCompletion to set completedAt
-- [ ] Ensure permanent task completion counts toward category stats
+- [x] Add categoryId to permanent_templates table
+- [x] Add categoryId to permanent_instances table
+- [x] Update permanentTaskStorage to save/read categoryId
+- [x] Update handlePermanentCompletion to set completedAt
+- [x] Ensure permanent task completion counts toward category stats
 
 **Files:**
-- [ ] `app/core/services/storage/schema/permanentTask.ts`
-- [ ] `app/core/services/storage/permanentTaskStorage.ts`
-- [ ] `app/features/permanentTask/utils/permanentTaskActions.ts`
+- [x] `app/core/services/storage/schema/permanentTask.ts`
+- [x] `app/core/services/storage/permanentTaskStorage.ts`
+- [x] `app/features/permanentTask/utils/permanentTaskActions.ts`
 
 ---
 
@@ -175,7 +175,7 @@ CategoryManagementScreen
 ### High Priority
 - [x] 3.1 Edit task (name + due date)
 - [x] 3.2 Category persistence (table + storage)
-- [ ] 3.5 Permanent task category backend
+- [x] 3.5 Permanent task category backend
 
 ### Medium Priority
 - [x] 3.3 User-created categories (feature module)
@@ -224,8 +224,8 @@ ALTER TABLE permanent_instances ADD COLUMN category_id TEXT;
 - [x] Users can select categories when creating permanent task templates
 - [x] Default categories (Lifestyle, Work, Health) seeded on first launch
 - [x] CategorySelector is reusable across screens
-- [ ] Permanent task categoryId saved to database
-- [ ] Permanent task completion updates category stats
+- [x] Permanent task categoryId saved to database
+- [x] Permanent task completion updates category stats
 - [ ] Users can create new categories from Browse
 - [ ] Users can edit category name/color from Browse
 - [ ] Users can delete categories from Browse

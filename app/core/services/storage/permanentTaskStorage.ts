@@ -9,8 +9,8 @@ import { PermanentTask, TemplateStats } from '../../../features/permanentTask/ty
 export async function savePermanentTemplate(template: PermanentTask): Promise<void> {
   db.runSync(
     `INSERT OR REPLACE INTO templates
-      (permanentId, templateTitle, isTemplate, instanceCount, autoRepeat, location, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      (permanentId, templateTitle, isTemplate, instanceCount, autoRepeat, location, createdAt, category_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       template.permanentId,
       template.templateTitle,
@@ -19,6 +19,7 @@ export async function savePermanentTemplate(template: PermanentTask): Promise<vo
       template.autoRepeat ? JSON.stringify(template.autoRepeat) : null,
       template.location || null,
       template.createdAt,  // already number
+      template.categoryId || null,
     ]
   );
 
@@ -45,6 +46,7 @@ export async function getTemplateById(templateId: string): Promise<PermanentTask
     autoRepeat: string | null;
     location: string | null;
     createdAt: number;
+    category_id: string | null;
   }>(`SELECT * FROM templates WHERE permanentId = ? AND isTemplate = 1`, [templateId]);
 
   if (rows.length === 0) {
@@ -62,6 +64,7 @@ export async function getTemplateById(templateId: string): Promise<PermanentTask
     location: row.location || undefined,
     createdAt: row.createdAt,
     completed: false,
+    categoryId: row.category_id || undefined,
   };
 }
 
@@ -77,6 +80,7 @@ export async function getAllTemplates(): Promise<PermanentTask[]> {
     autoRepeat: string | null;
     location: string | null;
     createdAt: number;
+    category_id: string | null;
   }>(`SELECT * FROM templates WHERE isTemplate = 1 ORDER BY createdAt DESC`);
 
   return rows.map(row => ({
@@ -89,6 +93,7 @@ export async function getAllTemplates(): Promise<PermanentTask[]> {
     location: row.location || undefined,
     createdAt: row.createdAt,
     completed: false,
+    categoryId: row.category_id || undefined,
   }));
 }
 
@@ -129,9 +134,9 @@ export async function deletePermanentTemplate(templateId: string): Promise<void>
 export async function savePermanentInstance(instance: PermanentTask): Promise<void> {
   db.runSync(
     `INSERT OR REPLACE INTO template_instances
-      (instanceId, templateId, createdAt, dueDate)
-     VALUES (?, ?, ?, ?)`,
-    [instance.id, instance.permanentId, instance.createdAt, instance.dueDate || null]
+      (instanceId, templateId, createdAt, dueDate, category_id)
+     VALUES (?, ?, ?, ?, ?)`,
+    [instance.id, instance.permanentId, instance.createdAt, instance.dueDate || null, instance.categoryId || null]
   );
 
   db.runSync(
@@ -151,6 +156,7 @@ export async function getInstancesByTemplateId(templateId: string): Promise<Perm
     templateId: string;
     createdAt: number;
     dueDate: number | null;
+    category_id: string | null;
   }>(`SELECT * FROM template_instances WHERE templateId = ? ORDER BY createdAt DESC`, [templateId]);
 
   // Get the template to copy its data to instances
@@ -168,7 +174,8 @@ export async function getInstancesByTemplateId(templateId: string): Promise<Perm
     dueDate: row.dueDate || undefined,
     location: template.location,
     autoRepeat: template.autoRepeat,
-    completed: false, // Note: completion status not stored in schema yet
+    completed: false,
+    categoryId: row.category_id || template.categoryId || undefined,
   }));
 }
 
@@ -181,6 +188,7 @@ export async function getInstanceById(instanceId: string): Promise<PermanentTask
     templateId: string;
     createdAt: number;
     dueDate: number | null;
+    category_id: string | null;
   }>(`SELECT * FROM template_instances WHERE instanceId = ?`, [instanceId]);
 
   if (rows.length === 0) {
@@ -203,6 +211,7 @@ export async function getInstanceById(instanceId: string): Promise<PermanentTask
     location: template.location,
     autoRepeat: template.autoRepeat,
     completed: false,
+    categoryId: row.category_id || template.categoryId || undefined,
   };
 }
 

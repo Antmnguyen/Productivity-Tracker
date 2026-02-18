@@ -60,5 +60,19 @@ export function createPermanentTasksSchema(): void {
     // Column already exists, ignore
   }
 
+  // Migration: add category_id column to templates table
+  try {
+    db.execSync(`ALTER TABLE templates ADD COLUMN category_id TEXT`);
+  } catch (_) {
+    // Column already exists, ignore
+  }
+
+  // Migration: add category_id column to template_instances table
+  try {
+    db.execSync(`ALTER TABLE template_instances ADD COLUMN category_id TEXT`);
+  } catch (_) {
+    // Column already exists, ignore
+  }
+
   console.log('✅ Permanent tasks schema created (templates, instances, stats)');
 }

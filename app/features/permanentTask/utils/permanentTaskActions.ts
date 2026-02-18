@@ -85,6 +85,7 @@ export async function createPermanentTask(
       createdAt: new Date(instance.createdAt),
       kind: 'permanent',
       dueDate: instance.dueDate ? new Date(instance.dueDate) : undefined,
+      categoryId: instance.categoryId || template.categoryId,
       location: instance.location ? { name: instance.location } as any : undefined,
       metadata: {
         permanentId: instance.permanentId,
@@ -107,6 +108,11 @@ export async function createPermanentTask(
     autoRepeat: data?.autoRepeat,
   });
 
+  // Attach categoryId if provided
+  if (data?.categoryId) {
+    template.categoryId = data.categoryId;
+  }
+
   // Validate and save
   validateTemplate(template);
   await savePermanentTemplate(template);
@@ -118,6 +124,7 @@ export async function createPermanentTask(
     completed: false,
     createdAt: new Date(template.createdAt),
     kind: 'permanent',
+    categoryId: template.categoryId,
     location: template.location ? { name: template.location } as any : undefined,
     metadata: {
       permanentId: template.permanentId,
@@ -171,6 +178,7 @@ export async function handlePermanentCompletion(task: Task): Promise<Task> {
     dueDate: task.dueDate?.getTime(),
     location: typeof task.location === 'object' ? (task.location as any).name : task.location,
     autoRepeat: metadata?.autoRepeat,
+    categoryId: task.categoryId,
   };
 
   // Save the completed instance
@@ -182,6 +190,13 @@ export async function handlePermanentCompletion(task: Task): Promise<Task> {
     completedAt
   );
 
+  // Set completedAt on the tasks table so it counts toward category stats
+  await saveTask({
+    ...task,
+    completed: true,
+    completedAt: new Date(completedAt),
+  });
+
   // Auto-create next recurring instance if configured
   if (permanentTask.autoRepeat) {
     try {
@@ -191,6 +206,8 @@ export async function handlePermanentCompletion(task: Task): Promise<Task> {
           template,
           permanentTask.dueDate
         );
+        // Inherit categoryId from template for recurring instances
+        nextInstance.categoryId = template.categoryId;
         await savePermanentInstance(nextInstance);
       }
     } catch (error) {
@@ -203,6 +220,7 @@ export async function handlePermanentCompletion(task: Task): Promise<Task> {
   return {
     ...task,
     completed: true,
+    completedAt: new Date(completedAt),
   };
 }
 
@@ -270,6 +288,7 @@ export async function reassignPermanentTask(
     title: task.title !== metadata?.templateTitle ? task.title : undefined,
     autoRepeat: metadata?.autoRepeat,
     instanceCount: metadata?.instanceCount,
+    categoryId: task.categoryId,
   };
 
   // Apply updates
@@ -342,6 +361,7 @@ export async function pushPermanentTaskForward(
     location: typeof task.location === 'object' ? (task.location as any).name : task.location,
     title: task.title !== metadata?.templateTitle ? task.title : undefined,
     autoRepeat: metadata?.autoRepeat,
+    categoryId: task.categoryId,
   };
 
   await savePermanentInstance(permanentTask);
@@ -375,6 +395,7 @@ export async function getAllPermanentTemplates(): Promise<Task[]> {
     completed: false,
     createdAt: new Date(template.createdAt),
     kind: 'permanent' as const,
+    categoryId: template.categoryId,
     location: template.location ? { name: template.location } as any : undefined,
     metadata: {
       permanentId: template.permanentId,
@@ -409,6 +430,7 @@ export async function getPermanentTemplate(
     completed: false,
     createdAt: new Date(template.createdAt),
     kind: 'permanent',
+    categoryId: template.categoryId,
     location: template.location ? { name: template.location } as any : undefined,
     metadata: {
       permanentId: template.permanentId,

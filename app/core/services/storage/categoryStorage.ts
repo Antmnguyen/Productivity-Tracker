@@ -157,9 +157,19 @@ export async function updateCategory(
  * @param categoryId - The category ID to delete
  */
 export async function deleteCategory(categoryId: string): Promise<void> {
-  // First, clear category_id from any tasks using this category
+  // Clear category_id from any tasks using this category
   db.runSync(
     'UPDATE tasks SET category_id = NULL WHERE category_id = ?',
+    [categoryId]
+  );
+
+  // Clear category_id from permanent task tables
+  db.runSync(
+    'UPDATE templates SET category_id = NULL WHERE category_id = ?',
+    [categoryId]
+  );
+  db.runSync(
+    'UPDATE template_instances SET category_id = NULL WHERE category_id = ?',
     [categoryId]
   );
 
