@@ -1,6 +1,6 @@
 # Sprint 4 Plan: Statistics System
 
-**Status:** Planning
+**Status:** In Progress
 **Goal:** Build comprehensive statistics tracking and visualization system
 
 ---
@@ -220,17 +220,17 @@ WHERE completed = 1 AND category = ?;
 - [ ] **1.6** Define stats types in `types/stats.ts`
 
 ### Phase 2: Reusable Components
-- [ ] **2.1** Create `CircularProgress` component
-- [ ] **2.2** Create `WeeklyMiniChart` component
-- [ ] **2.3** Create `StreakBadge` component
-- [ ] **2.4** Create `StatPreviewCard` (combines above)
-- [ ] **2.5** Test preview card with mock data
+- [x] **2.1** Create `CircularProgress` component
+- [x] **2.2** Create `WeeklyMiniChart` component
+- [ ] **2.3** Create `StreakBadge` component *(skipped — streak rendered inline in StatPreviewCard)*
+- [x] **2.4** Create `StatPreviewCard` (combines above)
+- [x] **2.5** Test preview card with mock data
 
 ### Phase 3: Stats List Screen
-- [ ] **3.1** Update `StatsScreen` to show list of preview cards
-- [ ] **3.2** Load "All Tasks" stats
-- [ ] **3.3** Load per-template stats (dynamic list)
-- [ ] **3.4** Load per-category stats (dynamic list)
+- [x] **3.1** Update `StatsScreen` to show list of preview cards (OVERALL / PERMANENT TASKS / CATEGORIES sections, mock data)
+- [ ] **3.2** Load "All Tasks" stats *(blocked on Phase 1)*
+- [ ] **3.3** Load per-template stats (dynamic list) *(blocked on Phase 1)*
+- [ ] **3.4** Load per-category stats (dynamic list) *(blocked on Phase 1)*
 - [ ] **3.5** Add pull-to-refresh
 
 ### Phase 4: Detail Screen Components
