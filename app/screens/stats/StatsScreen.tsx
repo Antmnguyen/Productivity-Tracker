@@ -98,6 +98,7 @@ interface CollapsibleSectionProps {
   badgeBorderRadius?: number;   // corner radius px        default: 14
   badgeBorderWidth?: number;    // 0 = no border           default: 0
   badgeBorderColor?: string;    // defaults to badgeColor
+  emptyMessage?: string;        // shown inside section when there are no items
 }
 
 const ANIM_DURATION_OPEN  = 320;
@@ -115,6 +116,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   badgeBorderRadius = 14,
   badgeBorderWidth  = 0,
   badgeBorderColor,
+  emptyMessage,
 }) => {
   const [open, setOpen] = useState(defaultOpen);
   const anim    = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
@@ -187,7 +189,11 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
 
       <Animated.View style={{ maxHeight, overflow: 'hidden' }}>
         <Animated.View style={[sectionStyles.content, { opacity }]}>
-          {children}
+          {React.Children.count(children) === 0 && emptyMessage ? (
+            <Text style={sectionStyles.emptyText}>{emptyMessage}</Text>
+          ) : (
+            children
+          )}
         </Animated.View>
       </Animated.View>
     </View>
@@ -234,6 +240,13 @@ const sectionStyles = StyleSheet.create({
   content: {
     borderTopWidth: 1,
     borderTopColor: '#f2f2f2',
+  },
+  emptyText: {
+    padding: 20,
+    textAlign: 'center',
+    fontSize: 14,
+    color: '#ccc',
+    fontWeight: '500',
   },
 });
 
@@ -456,6 +469,7 @@ export const StatsScreen: React.FC = () => {
           renderIcon={() => <Text style={{ fontSize: 26 }}>🗂️</Text>}
           badgeColor="#007AFF"
           badgeOpacity={0.12}
+          emptyMessage="No categories yet"
         >
           {categories.map((c, i) => (
             <StatPreviewCard
@@ -474,6 +488,7 @@ export const StatsScreen: React.FC = () => {
           renderIcon={() => <Text style={{ fontSize: 26 }}>🔁</Text>}
           badgeColor="#34C759"
           badgeOpacity={0.12}
+          emptyMessage="No permanent tasks yet"
         >
           {templates.map((t, i) => (
             <StatPreviewCard

@@ -1,6 +1,6 @@
 # Sprint 4 Progress: Statistics Preview Cards
 
-**Branch:** `ui-sprint3` (continuing)
+**Branch:** `sprint$` tinuing)
 **Phase:** 2 — Reusable Components + Stats List Screen (partial)
 
 ---
