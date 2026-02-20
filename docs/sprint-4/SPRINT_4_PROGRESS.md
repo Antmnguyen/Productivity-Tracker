@@ -127,6 +127,37 @@ New: rightRotation = -135 + Math.min(angle, 180)  ← correct
 
 ---
 
+---
+
+## Graph Navigation Refactor *(2026-02-20)*
+
+All three graph components now have period navigation **built directly into the card** — no external navigator component required.
+
+### `WeekBarGraph`
+- New nav row between the section title and bars: `‹  Feb 10 – Feb 16, 2026  ›`
+- Visual matches the standalone `WeekNavigator` (fafafa background, subtle border)
+- `›` disabled on the current week
+- Past-week data generated from a stable integer seed (week number since epoch) — same week always renders identical values
+- New optional props: `initialWeekStart?: Date`, `onWeekChange?: (weekStart: Date) => void`
+
+### `MonthCalendarGraph`
+- `‹` / `›` arrows integrated inline with the existing month/year title: `‹  January 2026  ›`
+- `monthTitle` has `minWidth: 130, textAlign: 'center'` — arrows stay fixed regardless of month name length
+- `›` disabled on the current month; past months use seeded mock data
+- New optional prop: `onMonthChange?: (year: number, month: number) => void`
+- **Ring rendering:** Uses the **transparent-border technique** — a single `View` with `borderRadius` + per-side `borderColor`. This is the canonical approach. The OS renders per-side borders as one continuous path, producing naturally rounded inner corners. Do not revert to the five-segment clip-box approach.
+
+### `YearOverviewGraph`
+- `‹` / `›` arrows integrated with a year label: `‹  2026  ›`
+- "YEAR OVERVIEW" / "YEAR COMPLETION RATE" mode label moved to a subtitle row below the nav
+- `›` disabled on the current year; past years use seeded mock data (6–28 completions/month)
+- New optional props: `initialYear?: number`, `onYearChange?: (year: number) => void`
+
+### Shared mock-data strategy for navigation
+Each graph uses `Math.sin(seed + 1) * 10000` hashing to derive stable, consistent values for any past period. The seed is derived from the period's unique integer representation (week number, `year*10000 + month*100 + day`, `year*100 + month`). Current-period data always uses the real `data` prop unchanged.
+
+---
+
 ## What's Next (Sprint 4 remaining phases)
 
 | Phase | Work |

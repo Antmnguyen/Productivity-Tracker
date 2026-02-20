@@ -7,60 +7,33 @@
 // shows a square progress indicator: a light-grey perimeter track with a
 // clockwise-sweeping colored fill that reflects how much was completed.
 //
+// Navigation is built into the header row — ‹ and › arrows let the user
+// browse to any past month. The › arrow is disabled on the current month.
+// Navigating to a different month generates stable mock data from a seed
+// so the same past month always looks identical across re-renders.
+//
+// ── Header ────────────────────────────────────────────────────────────────────
+//
+//   ‹   January 2026   ›               [Count | %]
+//
 // ── Toggle modes ─────────────────────────────────────────────────────────────
 //
 //   Count mode  — fill is relative to the busiest day in the month.
-//                 The day with the most completions gets a full ring; all
-//                 others are scaled proportionally. Good for seeing which days
-//                 had the most activity at a glance.
-//
 //   % mode      — fill = completed ÷ total (true completion rate per day).
-//                 A full ring means every scheduled task was done that day.
-//                 Good for seeing how consistently the task was completed.
 //
-// ── Color thresholds (applied to the fill proportion in both modes) ───────────
+// ── Color thresholds (applied to fill proportion in both modes) ───────────────
 //
 //     < 30%  → red    #FF3B30
 //     30–59% → yellow #FF9500
 //     ≥ 60%  → green  #34C759
 //
-//   0% fill (nothing completed, or 0 relative to max) shows only the grey
-//   track — no colored fill is drawn.
-//   Days with no scheduled tasks show a plain grey cell with no track at all.
-//
-// ── Border technique ─────────────────────────────────────────────────────────
-//
-//   Two layers are stacked inside each active cell:
-//
-//     1. Grey track  — a standard `borderWidth` View with `borderRadius: 8`.
-//                      CSS borders derive inner corner radius automatically
-//                      (inner radius = borderRadius − borderWidth = 8 − 4 = 4),
-//                      giving naturally rounded inner and outer corners without
-//                      any extra masking.
-//
-//     2. Colored fill — rendered on top via SquareProgressBorder, which uses
-//                      five absolute-positioned overflow:'hidden' clip boxes
-//                      that trace the perimeter clockwise from 12 o'clock:
-//                        A: top-right half  (0   → S/2)
-//                        B: right edge      (S/2 → 3S/2)
-//                        C: bottom edge     (3S/2→ 5S/2)
-//                        D: left edge       (5S/2→ 7S/2)
-//                        E: top-left half   (7S/2→ 4S)
-//
-//   Cell size is measured via `onLayout` — required for the clip calculations.
-//   `overflow:'hidden'` on the cell clips the fill at the cell's rounded edge.
-//
-// ── Today indicator ──────────────────────────────────────────────────────────
-//
-//   Today's cell has a bold, larger number and a small filled dot below it
-//   (in the fill color, or grey if no tasks). Background stays neutral.
-//
 // ── Props ─────────────────────────────────────────────────────────────────────
 //
-//   year   - full calendar year (e.g. 2026)
-//   month  - 0-indexed month (0 = Jan … 11 = Dec)
-//   data   - CalendarDayData[] — only days with tasks need entries
-//   color  - accent color used for the active toggle button background
+//   year           - initial full calendar year (e.g. 2026)
+//   month          - initial 0-indexed month (0 = Jan … 11 = Dec)
+//   data           - CalendarDayData[] for the initial month
+//   color          - accent color for the active toggle button background
+//   onMonthChange  - optional callback fired when the user navigates months
 //
 // ── Used by ──────────────────────────────────────────────────────────────────
 //
@@ -68,7 +41,7 @@
 //
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, LayoutChangeEvent, TouchableOpacity } from 'react-native';
 
 // =============================================================================
@@ -89,14 +62,16 @@ export interface CalendarDayData {
 }
 
 interface MonthCalendarGraphProps {
-  /** Full calendar year, e.g. 2026 */
+  /** Initial full calendar year, e.g. 2026 */
   year: number;
-  /** 0-indexed month (0 = January, 11 = December) */
+  /** Initial 0-indexed month (0 = January, 11 = December) */
   month: number;
-  /** Activity data — days absent are treated as "no tasks scheduled" */
+  /** Activity data for the initial month — days absent = no tasks scheduled */
   data: CalendarDayData[];
   /** Accent color for the active toggle button */
   color: string;
+  /** Fired when the user navigates to a different month */
+  onMonthChange?: (year: number, month: number) => void;
 }
 
 /** The two display modes for the progress fill */
@@ -130,70 +105,38 @@ const TRACK_COLOR = '#DEDEDE';
 const BORDER_T = 4;
 
 // =============================================================================
-// HELPERS
+// HELPERS — calendar layout
 // =============================================================================
 
 /** Returns the number of days in a given month, correctly handling leap years. */
 function daysInMonth(year: number, month: number): number {
-  // Day 0 of the next month = last day of this month
   return new Date(year, month + 1, 0).getDate();
 }
 
 /**
  * Returns the Monday-first column index (0 = Monday … 6 = Sunday) for the
- * first day of the given month. JS getDay() returns 0 for Sunday, so we
- * shift the range by adding 6 and taking mod 7.
+ * first day of the given month.
  */
 function firstDayOffset(year: number, month: number): number {
   return (new Date(year, month, 1).getDay() + 6) % 7;
 }
 
 /**
- * Returns the fraction (0–1) of a perimeter segment that the fill should cover,
- * given how many total perimeter pixels are filled and the segment's pixel bounds.
- *
- * @param filled    - total perimeter pixels filled (progress × 4S)
- * @param segStart  - perimeter pixel where this segment begins
- * @param segEnd    - perimeter pixel where this segment ends
- */
-function segmentFill(filled: number, segStart: number, segEnd: number): number {
-  if (filled <= segStart) return 0;
-  if (filled >= segEnd)   return 1;
-  return (filled - segStart) / (segEnd - segStart);
-}
-
-/**
  * Derives the fill progress (0–1) and fill color for a single day cell.
- *
- * In Count mode the fill is relative to `maxCount` (the busiest day this month).
- * In % mode the fill is the true completion rate: completed ÷ total.
- *
- * Color thresholds are applied to the fill proportion in both modes:
- *   ≥60% → green, 30–59% → yellow, <30% → red.
- *
- * Returns `hasData: false` for empty days so the caller skips the track entirely.
- *
- * @param dayData  - activity data for this day (undefined = no tasks)
- * @param mode     - 'count' (relative) or 'percent' (absolute rate)
- * @param maxCount - peak completed count across all active days — used in count mode
  */
 function getProgressInfo(
   dayData:  CalendarDayData | undefined,
   mode:     DisplayMode,
   maxCount: number,
 ): { hasData: boolean; fillProgress: number; fillColor: string } {
-  // Days with no scheduled tasks get no track and no fill
   if (!dayData || dayData.total === 0) {
     return { hasData: false, fillProgress: 0, fillColor: TRACK_COLOR };
   }
 
   const fillProgress = mode === 'count'
-    // Count mode: proportion relative to the month's busiest day
     ? Math.min(dayData.completed / maxCount, 1.0)
-    // Percent mode: true completion rate for the day
     : Math.min(dayData.completed / dayData.total, 1.0);
 
-  // Color threshold based on the fill proportion
   const fillColor =
     fillProgress >= 0.6 ? COLOR_HIGH :
     fillProgress >= 0.3 ? COLOR_MID  :
@@ -203,104 +146,82 @@ function getProgressInfo(
 }
 
 // =============================================================================
+// HELPERS — month navigation
+// =============================================================================
+
+/**
+ * Deterministic pseudo-random value in [0, 1) from an integer seed.
+ */
+function seededRand(seed: number): number {
+  const x = Math.sin(seed + 1) * 10000;
+  return x - Math.floor(x);
+}
+
+/**
+ * Generates plausible calendar data for a past month.
+ */
+function generateMonthMockData(year: number, month: number): CalendarDayData[] {
+  const now      = new Date();
+  const nowYear  = now.getFullYear();
+  const nowMonth = now.getMonth();
+
+  if (year > nowYear || (year === nowYear && month > nowMonth)) return [];
+
+  const total   = daysInMonth(year, month);
+  const lastDay = (year === nowYear && month === nowMonth) ? now.getDate() : total;
+
+  const result: CalendarDayData[] = [];
+  for (let d = 1; d <= lastDay; d++) {
+    const seed      = year * 10000 + month * 100 + d;
+    const r         = seededRand(seed);
+    const completed = r > 0.25 ? 1 : 0; 
+    result.push({ date: d, completed, total: 1 });
+  }
+  return result;
+}
+
+// =============================================================================
 // SUB-COMPONENT — clockwise colored progress fill
 // =============================================================================
 
 interface SquareProgressBorderProps {
-  /** Side length of the cell in pixels — from onLayout */
   size: number;
-  /** Fraction of the perimeter to fill, 0.0–1.0 */
   progress: number;
-  /** Color of the filled arc */
   color: string;
 }
 
 /**
- * Renders the colored clockwise-sweeping progress arc using five
- * absolute-positioned overflow:'hidden' clip boxes — one per perimeter segment.
- * Starts at 12 o'clock (top-center) and sweeps clockwise:
- *
- *   A: top edge, right half  (0   → S/2)   grows rightward from center
- *   B: right edge            (S/2 → 3S/2)  grows downward
- *   C: bottom edge           (3S/2→ 5S/2)  grows leftward from right
- *   D: left edge             (5S/2→ 7S/2)  grows upward from bottom
- *   E: top edge, left half   (7S/2→ 4S)    grows leftward toward center
- *
- * Each clip box reveals only as much of its colored bar as `segmentFill`
- * says should be visible for the current progress value.
- *
- * The parent cell's overflow:'hidden' + borderRadius clips the outer corners.
- * Inner corners are inherently right-angled, but sit on top of the grey
- * borderWidth track whose inner corners ARE rounded — so the full visual
- * impression is of a smooth progress ring.
+ * Renders the colored clockwise-sweeping progress arc.
+ * Uses a single View with borderWidth to ensure perfectly rounded inner corners.
  */
 const SquareProgressBorder: React.FC<SquareProgressBorderProps> = ({
-  size: S,
   progress,
   color,
 }) => {
-  // Nothing to draw
-  if (S <= 0 || progress <= 0) return null;
+  if (progress <= 0) return null;
 
-  const perimeter = 4 * S;
-  const filled    = progress * perimeter; // pixels of perimeter that are colored
-  const B         = BORDER_T;
+  const R = 8; // Parent border radius
+  const B = BORDER_T;
 
-  // Compute what fraction of each segment's length is covered by the fill
-  const fA = segmentFill(filled, 0,           S / 2);
-  const fB = segmentFill(filled, S / 2,       3 * S / 2);
-  const fC = segmentFill(filled, 3 * S / 2,  5 * S / 2);
-  const fD = segmentFill(filled, 5 * S / 2,  7 * S / 2);
-  const fE = segmentFill(filled, 7 * S / 2,  4 * S);
+  // Split progress into 4 segments to simulate the clockwise reveal
+  const showTop = progress > 0;
+  const showRight = progress > 0.25;
+  const showBottom = progress > 0.5;
+  const showLeft = progress > 0.75;
 
   return (
-    // absoluteFill places the drawing surface over the whole cell;
-    // pointerEvents="none" ensures the overlay doesn't intercept touches
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-
-      {/* A: top edge, right half — bar grows rightward from center-top */}
+    <View style={[StyleSheet.absoluteFill, { borderRadius: R, overflow: 'hidden' }]} pointerEvents="none">
       <View style={{
-        position: 'absolute', top: 0, left: S / 2,
-        width: S / 2, height: B, overflow: 'hidden',
-      }}>
-        <View style={{ width: fA * (S / 2), height: B, backgroundColor: color }} />
-      </View>
-
-      {/* B: right edge — bar grows downward from the top-right corner */}
-      <View style={{
-        position: 'absolute', top: 0, right: 0,
-        width: B, height: S, overflow: 'hidden',
-      }}>
-        <View style={{ width: B, height: fB * S, backgroundColor: color }} />
-      </View>
-
-      {/* C: bottom edge — bar grows leftward from the bottom-right corner */}
-      <View style={{
-        position: 'absolute', bottom: 0, left: 0,
-        width: S, height: B, overflow: 'hidden',
-        alignItems: 'flex-end', // anchor bar to the right so it grows left
-      }}>
-        <View style={{ width: fC * S, height: B, backgroundColor: color }} />
-      </View>
-
-      {/* D: left edge — bar grows upward from the bottom-left corner */}
-      <View style={{
-        position: 'absolute', top: 0, left: 0,
-        width: B, height: S, overflow: 'hidden',
-        justifyContent: 'flex-end', // anchor bar to the bottom so it grows up
-      }}>
-        <View style={{ width: B, height: fD * S, backgroundColor: color }} />
-      </View>
-
-      {/* E: top edge, left half — bar grows leftward toward center-top */}
-      <View style={{
-        position: 'absolute', top: 0, left: 0,
-        width: S / 2, height: B, overflow: 'hidden',
-        alignItems: 'flex-end', // anchor bar to the right (center) so it grows left
-      }}>
-        <View style={{ width: fE * (S / 2), height: B, backgroundColor: color }} />
-      </View>
-
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        borderRadius: R,
+        borderWidth: B,
+        borderColor: 'transparent',
+        borderTopColor: showTop ? color : 'transparent',
+        borderRightColor: showRight ? color : 'transparent',
+        borderBottomColor: showBottom ? color : 'transparent',
+        borderLeftColor: showLeft ? color : 'transparent',
+      }} />
     </View>
   );
 };
@@ -310,37 +231,13 @@ const SquareProgressBorder: React.FC<SquareProgressBorderProps> = ({
 // =============================================================================
 
 interface DayCellProps {
-  /** 1-based day number, or 0 for a padding spacer cell */
   dayNumber:    number;
-  /** True if this cell's date is today */
   isToday:      boolean;
-  /**
-   * Whether this day has any scheduled tasks.
-   * Pre-computed by MonthCalendarGraph from the data array and current mode.
-   */
   hasData:      boolean;
-  /**
-   * How much of the perimeter to fill with color, 0.0–1.0.
-   * Pre-computed by MonthCalendarGraph according to the active DisplayMode.
-   */
   fillProgress: number;
-  /** The color for the fill arc — red, yellow, or green based on the threshold */
   fillColor:    string;
 }
 
-/**
- * Renders one square day cell in the calendar grid.
- *
- * Active cells (hasData = true) display two stacked border layers:
- *   1. Grey track (borderWidth View) — full perimeter, rounded inner corners
- *   2. Colored fill (SquareProgressBorder) — sweeps clockwise over the track
- *
- * Padding cells (dayNumber 0) are invisible spacers to align the grid.
- * Today's cell has a bold number and a small dot indicator below it.
- *
- * The cell measures its own pixel width via onLayout so SquareProgressBorder
- * receives accurate dimensions for its perimeter calculations.
- */
 const DayCell: React.FC<DayCellProps> = ({
   dayNumber,
   isToday,
@@ -348,45 +245,34 @@ const DayCell: React.FC<DayCellProps> = ({
   fillProgress,
   fillColor,
 }) => {
-  // Measured side length in pixels — updated after first layout
   const [cellSize, setCellSize] = useState(0);
 
-  // Invisible spacer — keeps the 7-column Monday-first grid aligned
   if (dayNumber === 0) return <View style={cell.box} />;
 
-  /** Update cellSize when layout resolves; guard against sub-pixel noise */
   const handleLayout = (e: LayoutChangeEvent) => {
     const w = Math.round(e.nativeEvent.layout.width);
     if (w !== cellSize) setCellSize(w);
   };
 
-  // Numbers stay neutral — only the border carries the color signal
   const textColor = hasData ? '#444444' : '#BBBBBB';
 
   return (
     <View style={cell.box} onLayout={handleLayout}>
 
-      {/* ── Layer 1: grey track ────────────────────────────────────────────
-           Uses a real borderWidth View so inner corners are naturally rounded
-           by the CSS border model (inner radius = borderRadius − borderWidth
-           = 8 − 4 = 4 px). Only drawn for days that have scheduled tasks. */}
       {hasData && (
         <View
           pointerEvents="none"
           style={{
             position:     'absolute',
             top: 0, left: 0, right: 0, bottom: 0,
-            borderRadius: 8,         // matches cell.box borderRadius
+            borderRadius: 8,
             borderWidth:  BORDER_T,
             borderColor:  TRACK_COLOR,
           }}
         />
       )}
 
-      {/* ── Layer 2: colored fill ──────────────────────────────────────────
-           Sweeps clockwise from 12 o'clock proportional to fillProgress.
-           Not drawn when fillProgress is 0 (nothing done / relative count = 0). */}
-      {hasData && fillProgress > 0 && cellSize > 0 && (
+      {hasData && fillProgress > 0 && (
         <SquareProgressBorder
           size={cellSize}
           progress={fillProgress}
@@ -394,12 +280,10 @@ const DayCell: React.FC<DayCellProps> = ({
         />
       )}
 
-      {/* Day number — dark for active days, muted grey for empty days */}
       <Text style={[cell.label, { color: textColor }, isToday && cell.todayLabel]}>
         {dayNumber}
       </Text>
 
-      {/* Small filled dot below today's number — uses fill color or grey */}
       {isToday && (
         <View style={[cell.todayDot, { backgroundColor: hasData ? fillColor : '#AAAAAA' }]} />
       )}
@@ -408,17 +292,16 @@ const DayCell: React.FC<DayCellProps> = ({
   );
 };
 
-/** Styles for a single day cell */
 const cell = StyleSheet.create({
   box: {
     flex:            1,
-    aspectRatio:     1,      // keep cells square regardless of container width
+    aspectRatio:     1,
     margin:          2,
     borderRadius:    8,
     backgroundColor: '#F5F5F5',
     alignItems:      'center',
     justifyContent:  'center',
-    overflow:        'hidden', // clips colored fill at the rounded cell boundary
+    overflow:        'hidden',
   },
   label:      { fontSize: 13, fontWeight: '600' },
   todayLabel: { fontSize: 14, fontWeight: '800', color: '#222222' },
@@ -429,51 +312,61 @@ const cell = StyleSheet.create({
 // COMPONENT
 // =============================================================================
 
-/**
- * MonthCalendarGraph
- *
- * Displays a Monday-first calendar grid for one month. Each day with scheduled
- * tasks shows a square progress ring whose fill reflects completion — either
- * relative to the busiest day (Count mode) or as a true completion rate (% mode).
- *
- * The Count/% toggle is managed internally; the parent only needs to supply
- * the activity data and the accent color for the active toggle button.
- */
 export const MonthCalendarGraph: React.FC<MonthCalendarGraphProps> = ({
   year,
   month,
   data,
   color,
+  onMonthChange,
 }) => {
-  // Internal toggle — parent does not need to manage this
   const [mode, setMode] = useState<DisplayMode>('percent');
+  const [displayMonth, setDisplayMonth] = useState(month);
+  const [displayYear,  setDisplayYear]  = useState(year);
 
-  // O(1) lookup of a day's activity data by its 1-based day number
-  const dataMap = new Map<number, CalendarDayData>(data.map(d => [d.date, d]));
+  const now           = new Date();
+  const isCurrentMonth =
+    displayYear === now.getFullYear() && displayMonth === now.getMonth();
 
-  // Peak completed count across all active days — used for Count mode scaling.
-  // Math.max with a floor of 1 prevents divide-by-zero when all days have 0 completions.
-  const maxCount = Math.max(...data.map(d => d.completed), 1);
+  const handlePrevMonth = () => {
+    if (displayMonth === 0) {
+      setDisplayMonth(11);
+      setDisplayYear(y => y - 1);
+      onMonthChange?.(displayYear - 1, 11);
+    } else {
+      setDisplayMonth(m => m - 1);
+      onMonthChange?.(displayYear, displayMonth - 1);
+    }
+  };
 
-  // Today's day number within this month, or -1 if this calendar shows a different month
-  const now      = new Date();
-  const todayDay = now.getFullYear() === year && now.getMonth() === month
-    ? now.getDate()
-    : -1;
+  const handleNextMonth = () => {
+    if (isCurrentMonth) return;
+    if (displayMonth === 11) {
+      setDisplayMonth(0);
+      setDisplayYear(y => y + 1);
+      onMonthChange?.(displayYear + 1, 0);
+    } else {
+      setDisplayMonth(m => m + 1);
+      onMonthChange?.(displayYear, displayMonth + 1);
+    }
+  };
 
-  // ── Build flat cell array ──────────────────────────────────────────────────
-  // Starts with `offset` zero-padding cells (invisible spacers) so day 1 lands
-  // in the correct Monday-first column, then day numbers 1…totalDays, then
-  // trailing zeros to complete the last row to a multiple of 7.
-  const totalDays = daysInMonth(year, month);
-  const offset    = firstDayOffset(year, month);
+  const displayData = useMemo((): CalendarDayData[] => {
+    if (displayYear === year && displayMonth === month) return data;
+    return generateMonthMockData(displayYear, displayMonth);
+  }, [displayYear, displayMonth, year, month, data]);
+
+  const dataMap  = new Map<number, CalendarDayData>(displayData.map(d => [d.date, d]));
+  const maxCount = Math.max(...displayData.map(d => d.completed), 1);
+  const todayDay = isCurrentMonth ? now.getDate() : -1;
+
+  const totalDays = daysInMonth(displayYear, displayMonth);
+  const offset    = firstDayOffset(displayYear, displayMonth);
   const cells: number[] = [
-    ...Array(offset).fill(0),                              // leading spacers
-    ...Array.from({ length: totalDays }, (_, i) => i + 1), // actual days
+    ...Array(offset).fill(0),
+    ...Array.from({ length: totalDays }, (_, i) => i + 1),
   ];
-  while (cells.length % 7 !== 0) cells.push(0);            // trailing spacers
+  while (cells.length % 7 !== 0) cells.push(0);
 
-  // Chunk the flat array into rows of 7 (one row per week)
   const rows: number[][] = [];
   for (let i = 0; i < cells.length; i += 7) {
     rows.push(cells.slice(i, i + 7));
@@ -482,13 +375,32 @@ export const MonthCalendarGraph: React.FC<MonthCalendarGraphProps> = ({
   return (
     <View style={styles.card}>
 
-      {/* ── Header: month title + Count/% toggle ─────────────────────────── */}
       <View style={styles.headerRow}>
-        <Text style={styles.monthTitle}>
-          {MONTHS_FULL[month]} {year}
-        </Text>
+        <View style={styles.monthNav}>
+          <TouchableOpacity
+            onPress={handlePrevMonth}
+            style={styles.navArrow}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.navArrowText}>‹</Text>
+          </TouchableOpacity>
 
-        {/* Toggle pill — switches between relative count and true % fill */}
+          <Text style={styles.monthTitle}>
+            {MONTHS_FULL[displayMonth]} {displayYear}
+          </Text>
+
+          <TouchableOpacity
+            onPress={handleNextMonth}
+            style={[styles.navArrow, isCurrentMonth && styles.navArrowDisabled]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={isCurrentMonth ? 1 : 0.6}
+            disabled={isCurrentMonth}
+          >
+            <Text style={[styles.navArrowText, isCurrentMonth && styles.navArrowTextDisabled]}>›</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.toggle}>
           <TouchableOpacity
             style={[styles.toggleBtn, mode === 'count' && { backgroundColor: color }]}
@@ -512,19 +424,15 @@ export const MonthCalendarGraph: React.FC<MonthCalendarGraphProps> = ({
         </View>
       </View>
 
-      {/* ── Day-of-week column headers ──────────────────────────────────── */}
-      {/* Each label uses flex:1 so it aligns with its column of day cells */}
       <View style={styles.dowRow}>
         {DOW_LABELS.map(lbl => (
           <Text key={lbl} style={styles.dowLabel}>{lbl}</Text>
         ))}
       </View>
 
-      {/* ── Calendar grid — one View per week row ──────────────────────── */}
       {rows.map((row, rowIdx) => (
         <View key={rowIdx} style={styles.weekRow}>
           {row.map((dayNum, colIdx) => {
-            // Pre-compute progress info here so DayCell stays presentation-only
             const info = getProgressInfo(dataMap.get(dayNum), mode, maxCount);
             return (
               <DayCell
@@ -540,15 +448,10 @@ export const MonthCalendarGraph: React.FC<MonthCalendarGraphProps> = ({
         </View>
       ))}
 
-      {/* ── Legend strip — explains the three color thresholds ─────────── */}
       <View style={styles.legend}>
-        {/* Green: ≥60% */}
         <LegendDot color={COLOR_HIGH}  label="≥60%"   />
-        {/* Yellow: 30–60% */}
         <LegendDot color={COLOR_MID}   label="30-60%" />
-        {/* Red: <30% */}
         <LegendDot color={COLOR_LOW}   label="<30%"   />
-        {/* No fill: grey track only (no tasks or 0 completions) */}
         <LegendDot color={TRACK_COLOR} label="None"   isBorderOnly={false} />
       </View>
 
@@ -561,31 +464,18 @@ export const MonthCalendarGraph: React.FC<MonthCalendarGraphProps> = ({
 // =============================================================================
 
 interface LegendDotProps {
-  /** Color of the dot indicator */
   color: string;
-  /** Text label displayed beside the dot */
   label: string;
-  /**
-   * When true (default), the dot shows as a colored border with a faint fill —
-   * matching the cell's progress ring visual.
-   * When false, the dot is a solid fill (used for the "None" / no-tasks entry).
-   */
   isBorderOnly?: boolean;
 }
 
-/**
- * One item in the legend strip beneath the calendar grid.
- * Renders a small colored square indicator (bordered or solid) + a text label.
- */
 const LegendDot = ({ color, label, isBorderOnly = true }: LegendDotProps) => (
   <View style={legend.item}>
     <View
       style={[
         legend.dot,
         isBorderOnly
-          // Bordered style mirrors the ring appearance of the cell track/fill
           ? { borderWidth: 2, borderColor: color, backgroundColor: color + '1A' }
-          // Solid style for the "None" entry (grey fill, no border)
           : { backgroundColor: color },
       ]}
     />
@@ -604,7 +494,6 @@ const legend = StyleSheet.create({
 // =============================================================================
 
 const styles = StyleSheet.create({
-  /** Outer card container — white with a soft shadow */
   card: {
     backgroundColor:  '#fff',
     borderRadius:     18,
@@ -617,22 +506,39 @@ const styles = StyleSheet.create({
     shadowRadius:     8,
     elevation:        3,
   },
-
-  /** Row that holds the month title on the left and the toggle on the right */
   headerRow: {
     flexDirection:  'row',
     alignItems:     'center',
     justifyContent: 'space-between',
     marginBottom:   12,
   },
-
+  monthNav: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           4,
+  },
+  navArrow: {
+    padding: 2,
+  },
+  navArrowDisabled: {
+    opacity: 0.25,
+  },
+  navArrowText: {
+    fontSize:   22,
+    color:      '#555',
+    fontWeight: '400',
+    lineHeight: 26,
+  },
+  navArrowTextDisabled: {
+    color: '#bbb',
+  },
   monthTitle: {
     fontSize:   15,
     fontWeight: '700',
     color:      '#333',
+    minWidth:   130,       // widest label is "September 2026" — arrows stay fixed
+    textAlign:  'center',
   },
-
-  // ── Count / % toggle pill ── (mirrors DayOfWeekPatternCard toggle styling)
   toggle: {
     flexDirection:   'row',
     backgroundColor: '#f2f2f2',
@@ -650,12 +556,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color:      '#999',
   },
-  /** Applied to the label of the active toggle button */
   toggleLabelActive: {
     color: '#fff',
   },
-
-  /** Row of Mon–Sun header labels; each uses flex:1 to match column widths */
   dowRow: {
     flexDirection:     'row',
     marginBottom:      4,
@@ -668,13 +571,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color:      '#ccc',
   },
-
-  /** One week's row of 7 day cells */
   weekRow: {
     flexDirection: 'row',
   },
-
-  /** Legend strip centered below the grid */
   legend: {
     flexDirection:  'row',
     justifyContent: 'center',

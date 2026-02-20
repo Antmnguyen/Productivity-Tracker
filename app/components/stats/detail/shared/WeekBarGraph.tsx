@@ -4,46 +4,43 @@
 // =============================================================================
 //
 // Full-width 7-bar chart showing completion activity for each day of the
-// week (Mon–Sun). This is the expanded detail-screen version of WeeklyMiniChart.
+// week (Mon–Sun). Includes a week navigator so the user can browse past weeks.
 //
 // Visual layout:
 //
-//   CURRENT WEEK COMPLETIONS  ──────────────── [Count | %] toggle
-//   (title changes to "CURRENT WEEK COMPLETION RATE" in % mode)
+//   WEEK COMPLETIONS  ─────────────────────── [Count | %] toggle
+//   ┌──────────────────────────────────────────────────────┐
+//   │   ‹     Feb 10 – Feb 16, 2026     ›                 │
+//   └──────────────────────────────────────────────────────┘
 //
 //   ██  █  ▄  ██  ▄   _   _
 //   M   T  W   T  F   S   S
-//   8   6  4   8  2   0   0        ← shown in Count mode
-//   80% 60% 40% 80% 20%  0%  0%   ← shown in % mode
+//   8   6  4   8  2   0   0        ← Count mode
+//   80% 60% 40% 80% 20%  0%  0%   ← % mode
+//
+// Navigation behaviour:
+//   - ‹ (prev) navigates one week earlier — always enabled.
+//   - › (next) is DISABLED when displaying the current week.
+//   - Week range label updates to reflect the selected week.
+//   - When navigating away from the current week, mock data is generated
+//     from a stable seed so the same past week always shows the same values.
 //
 // Toggle behaviour:
-//   - The "Count | %" pill in the top-right switches the value displayed
-//     under each bar between raw completion count and completion percentage.
+//   - The "Count | %" pill switches between raw count and completion %.
 //   - Internal state — the parent does not need to manage the toggle.
-//   - In % mode each bar's height represents: count / max_count * 100.
-//     The label below the bar shows the actual % value, not the height %.
-//     (Since we don't have a `total` per day, % is relative to peak day.)
-//
-// Bar rendering:
-//   - Bar heights scale relative to the day with the highest count.
-//   - A day with 0 completions renders a minimal stub (height 4) in grey.
-//   - Today's bar (if data covers the current week) could be highlighted —
-//     not implemented here; left for a future enhancement (Phase 6).
-//
-// Data:
-//   Receives `DayData[]` from WeeklyMiniChart — reuses the same type.
-//   Array must have exactly 7 items in Mon–Sun order.
 //
 // Props:
-//   data   - 7 DayData items [ { day: 'M', count: 8 }, ... ] Mon → Sun
-//   color  - hex accent color for active bars and toggle highlight
+//   data              - 7 DayData items (Mon–Sun) for the current week
+//   color             - hex accent color for bars and the active toggle
+//   initialWeekStart  - optional Monday Date to open on (defaults to this week)
+//   onWeekChange      - optional callback fired when the user navigates weeks
 //
 // Used by:
 //   OverallDetailScreen, CategoryDetailScreen, PermanentDetailScreen
 //
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { DayData } from '../../WeeklyMiniChart';
 import { safePct } from '../../../../core/utils/statUtils';
@@ -61,6 +58,8 @@ const BAR_MIN_HEIGHT = 4;
 /** Width of each bar column (bar itself is narrower, gap is around it) */
 const BAR_WIDTH = 28;
 
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -69,10 +68,77 @@ const BAR_WIDTH = 28;
 type DisplayMode = 'count' | 'percent';
 
 interface WeekBarGraphProps {
-  /** Exactly 7 DayData items ordered Mon → Sun */
+  /** Exactly 7 DayData items ordered Mon → Sun (data for the "current" week) */
   data: DayData[];
   /** Hex accent color for filled bars and the active toggle label */
   color: string;
+  /** Optional Monday Date to open on; defaults to this week's Monday */
+  initialWeekStart?: Date;
+  /** Fired when the user navigates to a different week */
+  onWeekChange?: (weekStart: Date) => void;
+}
+
+// =============================================================================
+// HELPERS — week navigation
+// =============================================================================
+
+/**
+ * Returns the Monday of the week that contains `date`, normalised to midnight.
+ * JS getDay() returns 0 for Sunday; Monday-first offset: +6 mod 7.
+ */
+function getMondayOf(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0 Sun … 6 Sat
+  const diff = day === 0 ? -6 : 1 - day; // shift so Monday = day 0
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+/**
+ * Formats a Monday Date into a human-readable week range label.
+ * Example: "Feb 10 – Feb 16, 2026"
+ */
+function formatWeekLabel(monday: Date): string {
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
+  const sm = MONTHS_SHORT[monday.getMonth()];
+  const em = MONTHS_SHORT[sunday.getMonth()];
+  return `${sm} ${monday.getDate()} – ${em} ${sunday.getDate()}, ${sunday.getFullYear()}`;
+}
+
+/**
+ * Deterministic pseudo-random value in [0, 1) from an integer seed.
+ * Same seed always produces the same value — ensures consistent data across
+ * re-renders when showing the same past week.
+ */
+function seededRand(seed: number): number {
+  const x = Math.sin(seed + 1) * 10000;
+  return x - Math.floor(x);
+}
+
+/**
+ * Returns display data for the given week.
+ * - If `weekStart` is the current Monday, returns `baseData` unchanged.
+ * - Otherwise, derives plausible counts from a stable per-week seed so the
+ *   same past week always looks identical across re-renders.
+ *
+ * Days where `total === 0` (task not scheduled) always return count 0.
+ */
+function generateWeekData(weekStart: Date, baseData: DayData[]): DayData[] {
+  const currentMonday = getMondayOf(new Date());
+  if (weekStart.getTime() === currentMonday.getTime()) return baseData;
+
+  // Unique integer seed per calendar week (week number since epoch)
+  const weekSeed = Math.floor(weekStart.getTime() / (7 * 24 * 3600 * 1000));
+
+  return baseData.map((d, i) => {
+    // Unscheduled days stay at 0
+    if (d.total === 0) return { ...d, count: 0 };
+    const maxRef = d.total != null && d.total > 0 ? d.total : Math.max(d.count, 3);
+    const count = Math.round(seededRand(weekSeed * 10 + i) * maxRef);
+    return { ...d, count };
+  });
 }
 
 // =============================================================================
@@ -97,22 +163,15 @@ const BarColumn: React.FC<BarColumnProps> = ({ item, maxCount, color, mode }) =>
   const hasTotal = item.total != null && item.total > 0;
 
   // ── Bar height ──────────────────────────────────────────────────────────
-  // Count mode : height relative to the busiest day in the week (volume view)
-  // Percent mode: height = completion rate for that day (count ÷ total)
-  //               Falls back to count/maxCount if no total is provided.
   const barHeight = (() => {
     if (!hasActivity) return BAR_MIN_HEIGHT;
     if (mode === 'percent' && hasTotal) {
-      // True completion rate — full BAR_MAX_HEIGHT = 100% completion that day
       return Math.max((item.count / item.total!) * BAR_MAX_HEIGHT, BAR_MIN_HEIGHT);
     }
-    // Count mode (or missing total): proportional to the week's peak day
     return Math.max((item.count / maxCount) * BAR_MAX_HEIGHT, BAR_MIN_HEIGHT);
   })();
 
   // ── Label beneath the day letter ───────────────────────────────────────
-  // Count mode : raw number ("5")
-  // Percent mode: true rate if total available ("100%"), else relative to max
   const displayValue = mode === 'count'
     ? String(item.count)
     : hasTotal
@@ -121,7 +180,6 @@ const BarColumn: React.FC<BarColumnProps> = ({ item, maxCount, color, mode }) =>
 
   return (
     <View style={col.container}>
-      {/* Vertical bar — anchored to the bottom of the bar area */}
       <View style={[col.barArea, { height: BAR_MAX_HEIGHT }]}>
         <View
           style={[
@@ -134,11 +192,7 @@ const BarColumn: React.FC<BarColumnProps> = ({ item, maxCount, color, mode }) =>
           ]}
         />
       </View>
-
-      {/* Day letter label (M, T, W, T, F, S, S) */}
       <Text style={col.dayLabel}>{item.day}</Text>
-
-      {/* Count or % value below the day letter */}
       <Text style={[col.valueLabel, hasActivity && { color }]}>
         {displayValue}
       </Text>
@@ -176,27 +230,56 @@ const col = StyleSheet.create({
 // COMPONENT
 // =============================================================================
 
-export const WeekBarGraph: React.FC<WeekBarGraphProps> = ({ data, color }) => {
-  // Toggle state is internal — the parent doesn't need to know which mode is active
+export const WeekBarGraph: React.FC<WeekBarGraphProps> = ({
+  data,
+  color,
+  initialWeekStart,
+  onWeekChange,
+}) => {
+  // Toggle state — parent doesn't need to know which mode is active
   const [mode, setMode] = useState<DisplayMode>('count');
 
-  // Highest count across all 7 days — used to scale bar heights and % values
-  const maxCount = Math.max(...data.map(d => d.count), 1);
+  // Current displayed week — starts on the provided Monday or this week's Monday
+  const [weekStart, setWeekStart] = useState<Date>(
+    () => initialWeekStart ? getMondayOf(initialWeekStart) : getMondayOf(new Date())
+  );
+
+  // True when showing the current real week — disables the › arrow
+  const isCurrentWeek = weekStart.getTime() === getMondayOf(new Date()).getTime();
+
+  // Data for the displayed week — current week uses baseData, past weeks get mock data
+  const displayData = useMemo(
+    () => generateWeekData(weekStart, data),
+    [weekStart, data],
+  );
+
+  const maxCount = Math.max(...displayData.map(d => d.count), 1);
+
+  // ── Navigation handlers ────────────────────────────────────────────────────
+  const handlePrev = () => {
+    const prev = new Date(weekStart);
+    prev.setDate(prev.getDate() - 7);
+    setWeekStart(prev);
+    onWeekChange?.(prev);
+  };
+
+  const handleNext = () => {
+    if (isCurrentWeek) return;
+    const next = new Date(weekStart);
+    next.setDate(next.getDate() + 7);
+    setWeekStart(next);
+    onWeekChange?.(next);
+  };
 
   return (
     <View style={styles.card}>
-      {/* ── Section header + Count/% toggle ───────────────────────────────── */}
-      {/*
-        Title reflects the active display mode:
-          Count mode  → "WEEKLY AVERAGE COMPLETIONS"
-          Percent mode → "WEEKLY AVERAGE COMPLETION RATE"
-      */}
+
+      {/* ── Section header + Count/% toggle ──────────────────────────────── */}
       <View style={styles.headerRow}>
         <Text style={styles.sectionLabel}>
-          {mode === 'count' ? 'CURRENT WEEK COMPLETIONS' : 'CURRENT WEEK COMPLETION RATE'}
+          {mode === 'count' ? 'WEEK COMPLETIONS' : 'WEEK COMPLETION RATE'}
         </Text>
 
-        {/* Toggle pill — tapping switches between Count and % display */}
         <View style={styles.toggle}>
           <TouchableOpacity
             style={[styles.toggleBtn, mode === 'count' && { backgroundColor: color }]}
@@ -220,9 +303,36 @@ export const WeekBarGraph: React.FC<WeekBarGraphProps> = ({ data, color }) => {
         </View>
       </View>
 
+      {/* ── Week navigator — same visual as WeekNavigator component ─────── */}
+      <View style={styles.navRow}>
+        {/* ‹ Previous week */}
+        <TouchableOpacity
+          onPress={handlePrev}
+          style={styles.navArrow}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.navArrowText}>‹</Text>
+        </TouchableOpacity>
+
+        {/* Week range label: "Feb 10 – Feb 16, 2026" */}
+        <Text style={styles.navLabel}>{formatWeekLabel(weekStart)}</Text>
+
+        {/* › Next week — disabled on current week */}
+        <TouchableOpacity
+          onPress={handleNext}
+          style={[styles.navArrow, isCurrentWeek && styles.navArrowDisabled]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={isCurrentWeek ? 1 : 0.6}
+          disabled={isCurrentWeek}
+        >
+          <Text style={[styles.navArrowText, isCurrentWeek && styles.navArrowTextDisabled]}>›</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* ── 7 bar columns ─────────────────────────────────────────────────── */}
       <View style={styles.barsRow}>
-        {data.map((item, i) => (
+        {displayData.map((item, i) => (
           <BarColumn
             key={i}
             item={item}
@@ -258,7 +368,7 @@ const styles = StyleSheet.create({
     flexDirection:  'row',
     justifyContent: 'space-between',
     alignItems:     'center',
-    marginBottom:   16,
+    marginBottom:   10,
   },
 
   sectionLabel: {
@@ -266,6 +376,48 @@ const styles = StyleSheet.create({
     fontWeight:    '800',
     color:         '#ccc',
     letterSpacing: 1.1,
+    flexShrink:    1,
+  },
+
+  // ── Week navigator row ─────────────────────────────────────────────────────
+  navRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    backgroundColor:   '#fafafa',
+    borderRadius:      12,
+    borderWidth:       1,
+    borderColor:       '#f0f0f0',
+    paddingVertical:   8,
+    paddingHorizontal: 12,
+    marginBottom:      14,
+  },
+
+  navArrow: {
+    padding: 2,
+  },
+
+  navArrowDisabled: {
+    opacity: 0.25,
+  },
+
+  navArrowText: {
+    fontSize:   24,
+    color:      '#555',
+    fontWeight: '400',
+    lineHeight: 28,
+  },
+
+  navArrowTextDisabled: {
+    color: '#bbb',
+  },
+
+  navLabel: {
+    flex:       1,
+    textAlign:  'center',
+    fontSize:   13,
+    fontWeight: '600',
+    color:      '#333',
   },
 
   // Count / % toggle pill

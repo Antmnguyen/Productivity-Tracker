@@ -3,35 +3,38 @@
 // YEAR OVERVIEW GRAPH
 // =============================================================================
 //
-// 12 vertical bars (Jan–Dec) summarising completion activity for the full year.
-// Provides a bird's-eye view of which months were busiest or most consistent.
+// 12 vertical bars (Jan–Dec) summarising completion activity for a given year.
+// Navigation is built into the header row — ‹ and › arrows let the user
+// browse to any past year. The › arrow is disabled on the current year.
+// Navigating to a different year generates stable mock data from a seed so
+// the same past year always looks identical across re-renders.
+//
+// ── Header ────────────────────────────────────────────────────────────────────
+//
+//   ‹   2026   ›                               [Count | %]
+//   YEAR OVERVIEW (or YEAR COMPLETION RATE in % mode)
 //
 // ── Toggle modes ─────────────────────────────────────────────────────────────
 //
-//   Count mode  — bar height is proportional to the raw completion count for
-//                 that month relative to the busiest month (peak = full height).
-//                 Label below shows the raw number (or "–" for 0).
-//                 Good for seeing overall volume trends across the year.
+//   Count mode  — bar height proportional to raw completion count relative to
+//                 the busiest month. Label = raw number.
 //
 //   % mode      — bar height = completed ÷ total (true monthly completion rate).
-//                 Full height = 100% of scheduled tasks completed that month.
-//                 Label below shows the rate as "X%" (or "–" for no tasks).
-//                 Good for seeing consistency regardless of how many tasks were
-//                 scheduled each month.
+//                 Label = "X%". Full height = 100%.
 //
-// ── Bar rendering ────────────────────────────────────────────────────────────
+// ── Bar rendering ─────────────────────────────────────────────────────────────
 //
-//   - Months with 0 completions (or no data) show a minimal grey stub.
-//   - Future months (index > current month in the current year) are rendered
-//     at 30% opacity so they are visually de-emphasised.
-//   - Value labels sit below the single-character month initial (J F M … D).
-//     In Count mode the raw number is shown; in % mode the rate is shown.
+//   - Months with 0 completions show a minimal grey stub.
+//   - Future months (beyond current month in the current year, or any month
+//     in a future year) are rendered at 30% opacity.
+//   - In a past year, all 12 months are shown at full opacity.
 //
 // ── Props ─────────────────────────────────────────────────────────────────────
 //
-//   data  - exactly 12 MonthData items in calendar order (Jan = index 0)
-//   color - hex accent color for bars that have activity and for the active
-//           toggle button background
+//   data         - exactly 12 MonthData items (current year, Jan = index 0)
+//   color        - hex accent color for bars and the active toggle button
+//   initialYear  - optional year to open on (defaults to current year)
+//   onYearChange - optional callback fired when the user navigates years
 //
 // ── Used by ──────────────────────────────────────────────────────────────────
 //
@@ -39,7 +42,7 @@
 //
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { safePct } from '../../../../core/utils/statUtils';
 
@@ -62,12 +65,16 @@ export interface MonthData {
 
 interface YearOverviewGraphProps {
   /**
-   * Exactly 12 MonthData items in Jan → Dec order.
+   * Exactly 12 MonthData items in Jan → Dec order for the current (default) year.
    * Future months should have completed = 0 and total = 0.
    */
   data: MonthData[];
   /** Hex accent color — used for filled bars and the active toggle button */
   color: string;
+  /** Optional year to open on (defaults to current calendar year) */
+  initialYear?: number;
+  /** Fired when the user navigates to a different year */
+  onYearChange?: (year: number) => void;
 }
 
 /** The two display modes for bar height and value labels */
@@ -87,15 +94,39 @@ const BAR_MIN_HEIGHT = 4;
 const MONTH_INITIALS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
 // =============================================================================
-// HELPERS
+// HELPERS — year navigation
 // =============================================================================
 
 /**
- * Returns the 0-indexed month number of today's date.
- * Used to determine which months are in the future and should be dimmed.
+ * Deterministic pseudo-random value in [0, 1) from an integer seed.
+ * Same seed always returns the same value — ensures consistent mock data
+ * when the user re-visits the same past year.
  */
-function currentMonthIndex(): number {
-  return new Date().getMonth();
+function seededRand(seed: number): number {
+  const x = Math.sin(seed + 1) * 10000;
+  return x - Math.floor(x);
+}
+
+/**
+ * Generates plausible 12-month bar data for a year that isn't the initial year.
+ * - Future years: all months return completed = 0, total = 0.
+ * - Past years: all 12 months get stable mock counts from a date-based seed.
+ */
+function generateYearMockData(year: number): MonthData[] {
+  const nowYear = new Date().getFullYear();
+
+  // Future year — no data
+  if (year > nowYear) {
+    return Array.from({ length: 12 }, (_, m) => ({ month: m, completed: 0, total: 0 }));
+  }
+
+  // Past year — generate stable counts for all 12 months
+  return Array.from({ length: 12 }, (_, m) => {
+    const seed      = year * 100 + m;
+    const r         = seededRand(seed);
+    const completed = Math.round(r * 22 + 6); // 6–28 completions per month
+    return { month: m, completed, total: 28 };
+  });
 }
 
 // =============================================================================
@@ -103,57 +134,31 @@ function currentMonthIndex(): number {
 // =============================================================================
 
 interface MonthBarProps {
-  /** Activity data for this month */
   item:     MonthData;
-  /** Peak completed count across all 12 months — used for Count mode scaling */
   maxCount: number;
-  /** Accent color for active bars */
   color:    string;
-  /** True if this month is still in the future — rendered at reduced opacity */
   isFuture: boolean;
-  /** Active display mode — determines bar height formula and label content */
   mode:     DisplayMode;
 }
 
 /**
  * Renders one month column: a vertical bar, a single-character month initial,
  * and a value label beneath it.
- *
- * Count mode:
- *   Bar height proportional to completed / maxCount (relative to busiest month).
- *   Label = raw completion count, or "–" for 0.
- *
- * Percent mode:
- *   Bar height = completed / total (true monthly completion rate).
- *   Full height represents 100% completion for that month.
- *   Label = "X%" completion rate, or "–" if no tasks were scheduled.
- *
- * Future months are fully rendered but at 30% opacity.
- * Months with zero activity show a minimal grey stub at BAR_MIN_HEIGHT.
  */
 const MonthBar: React.FC<MonthBarProps> = ({ item, maxCount, color, isFuture, mode }) => {
-  // A month "has activity" if at least one task was completed
   const hasActivity = item.completed > 0;
-
-  // Whether this month has any tasks scheduled (needed for % mode denominator)
-  const hasTotal = item.total > 0;
+  const hasTotal    = item.total > 0;
 
   // ── Bar height ────────────────────────────────────────────────────────────
-  // Count mode: scale relative to the busiest month (maxCount → full height)
-  // % mode:     scale to actual completion rate (100% → full height)
-  // Zero-activity months always fall back to the grey stub height
   const barHeight = (() => {
     if (!hasActivity) return BAR_MIN_HEIGHT;
     if (mode === 'percent' && hasTotal) {
       return Math.max((item.completed / item.total) * BAR_MAX_HEIGHT, BAR_MIN_HEIGHT);
     }
-    // Count mode (or % mode with missing total): relative to peak month
     return Math.max((item.completed / maxCount) * BAR_MAX_HEIGHT, BAR_MIN_HEIGHT);
   })();
 
   // ── Value label ───────────────────────────────────────────────────────────
-  // Count mode: raw number ("42") or "–" for 0
-  // % mode:     completion rate ("85%") or "–" if no total provided
   const valueLabel = (() => {
     if (!hasActivity) return '–';
     if (mode === 'percent') {
@@ -162,41 +167,29 @@ const MonthBar: React.FC<MonthBarProps> = ({ item, maxCount, color, isFuture, mo
     return String(item.completed);
   })();
 
-  // Active bars use the accent color; zero-activity bars use grey
   const barColor = hasActivity ? color : '#e8e8e8';
 
   return (
-    // Dim the whole column for future months — the opacity applies to bar + labels
     <View style={[col.container, isFuture && col.future]}>
-
-      {/* Vertical bar — anchored to the bottom of the fixed-height bar area */}
       <View style={[col.barArea, { height: BAR_MAX_HEIGHT }]}>
         <View style={[col.bar, { height: barHeight, backgroundColor: barColor }]} />
       </View>
-
-      {/* Single-character month initial (J, F, M, A, M, J, J, A, S, O, N, D) */}
       <Text style={col.monthLabel}>{MONTH_INITIALS[item.month]}</Text>
-
-      {/* Count or % value below the month initial */}
       <Text style={[col.valueLabel, hasActivity && { color }]}>
         {valueLabel}
       </Text>
-
     </View>
   );
 };
 
-/** Styles for a single month bar column */
 const col = StyleSheet.create({
   container: {
     flex:       1,
     alignItems: 'center',
   },
-  /** Future months rendered at ~30% opacity to visually indicate no data yet */
   future: {
     opacity: 0.3,
   },
-  /** Fixed-height area that the bar grows up from the bottom of */
   barArea: {
     justifyContent: 'flex-end',
     alignItems:     'center',
@@ -205,14 +198,12 @@ const col = StyleSheet.create({
     width:        14,
     borderRadius: 4,
   },
-  /** J F M A M J J A S O N D */
   monthLabel: {
     fontSize:   11,
     color:      '#bbb',
     fontWeight: '600',
     marginTop:  5,
   },
-  /** Completion count or rate — colored when the month has activity */
   valueLabel: {
     fontSize:   9,
     color:      '#ccc',
@@ -228,31 +219,92 @@ const col = StyleSheet.create({
 /**
  * YearOverviewGraph
  *
- * Displays 12 monthly bars for the current year. A Count/% toggle switches
- * between volume view (relative bar heights) and consistency view (true
- * monthly completion rates). Toggle state is managed internally.
+ * Displays 12 monthly bars for a given year with built-in year navigation.
+ * The ‹ and › arrows in the header let the user browse any past year;
+ * › is disabled on the current year.
+ *
+ * Navigating to a year other than the initial one generates stable mock data
+ * from a date-based seed (same past year always looks identical).
  */
-export const YearOverviewGraph: React.FC<YearOverviewGraphProps> = ({ data, color }) => {
-  // Internal toggle state — parent does not need to control this
+export const YearOverviewGraph: React.FC<YearOverviewGraphProps> = ({
+  data,
+  color,
+  initialYear,
+  onYearChange,
+}) => {
+  const currentYear = new Date().getFullYear();
+
+  // Internal toggle state
   const [mode, setMode] = useState<DisplayMode>('count');
 
-  // Peak completed count across all 12 months.
-  // Used for Count mode bar scaling. Floor of 1 prevents divide-by-zero.
-  const maxCount = Math.max(...data.map(d => d.completed), 1);
+  // Current displayed year — starts at initialYear or current year
+  const [displayYear, setDisplayYear] = useState(initialYear ?? currentYear);
 
-  // Current month index — months beyond this are dimmed as "future"
-  const nowMonth = currentMonthIndex();
+  // True when showing the current real year — disables the › arrow
+  const isCurrentYear = displayYear === currentYear;
+
+  // ── Navigation handlers ──────────────────────────────────────────────────
+  const handlePrevYear = () => {
+    const prev = displayYear - 1;
+    setDisplayYear(prev);
+    onYearChange?.(prev);
+  };
+
+  const handleNextYear = () => {
+    if (isCurrentYear) return;
+    const next = displayYear + 1;
+    setDisplayYear(next);
+    onYearChange?.(next);
+  };
+
+  // ── Data for the displayed year ──────────────────────────────────────────
+  const displayData = useMemo((): MonthData[] => {
+    // Use prop data when showing the initial (current) year
+    if (displayYear === (initialYear ?? currentYear)) return data;
+    // Generate stable mock data for any other year
+    return generateYearMockData(displayYear);
+  }, [displayYear, data, initialYear, currentYear]);
+
+  const maxCount = Math.max(...displayData.map(d => d.completed), 1);
+
+  // Determine which months appear as "future" (dimmed):
+  // - In the current year: months after today's month
+  // - In any past year: none (all months are past)
+  // - In a future year: all months
+  const nowMonth     = new Date().getMonth();
+  const isFutureYear = displayYear > currentYear;
 
   return (
     <View style={styles.card}>
 
-      {/* ── Header: section label + Count/% toggle ─────────────────────── */}
+      {/* ── Header: ‹ year nav › + Count/% toggle ─────────────────────── */}
       <View style={styles.headerRow}>
-        <Text style={styles.sectionLabel}>
-          {mode === 'count' ? 'YEAR OVERVIEW' : 'YEAR COMPLETION RATE'}
-        </Text>
 
-        {/* Toggle pill — same visual pattern as WeekBarGraph / DayOfWeekPatternCard */}
+        {/* Year navigator — arrows flank the year label */}
+        <View style={styles.yearNav}>
+          <TouchableOpacity
+            onPress={handlePrevYear}
+            style={styles.navArrow}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.navArrowText}>‹</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.yearLabel}>{displayYear}</Text>
+
+          <TouchableOpacity
+            onPress={handleNextYear}
+            style={[styles.navArrow, isCurrentYear && styles.navArrowDisabled]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={isCurrentYear ? 1 : 0.6}
+            disabled={isCurrentYear}
+          >
+            <Text style={[styles.navArrowText, isCurrentYear && styles.navArrowTextDisabled]}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Count / % toggle pill */}
         <View style={styles.toggle}>
           <TouchableOpacity
             style={[styles.toggleBtn, mode === 'count' && { backgroundColor: color }]}
@@ -276,18 +328,26 @@ export const YearOverviewGraph: React.FC<YearOverviewGraphProps> = ({ data, colo
         </View>
       </View>
 
+      {/* ── Mode subtitle label ──────────────────────────────────────────── */}
+      <Text style={styles.sectionLabel}>
+        {mode === 'count' ? 'YEAR OVERVIEW' : 'YEAR COMPLETION RATE'}
+      </Text>
+
       {/* ── 12 month bar columns ────────────────────────────────────────── */}
       <View style={styles.barsRow}>
-        {data.map((item) => (
-          <MonthBar
-            key={item.month}
-            item={item}
-            maxCount={maxCount}
-            color={color}
-            isFuture={item.month > nowMonth}
-            mode={mode}
-          />
-        ))}
+        {displayData.map((item) => {
+          const isFuture = isFutureYear || (isCurrentYear && item.month > nowMonth);
+          return (
+            <MonthBar
+              key={item.month}
+              item={item}
+              maxCount={maxCount}
+              color={color}
+              isFuture={isFuture}
+              mode={mode}
+            />
+          );
+        })}
       </View>
 
     </View>
@@ -299,7 +359,6 @@ export const YearOverviewGraph: React.FC<YearOverviewGraphProps> = ({ data, colo
 // =============================================================================
 
 const styles = StyleSheet.create({
-  /** Outer card — white background with a soft shadow */
   card: {
     backgroundColor:  '#fff',
     borderRadius:     18,
@@ -313,23 +372,56 @@ const styles = StyleSheet.create({
     elevation:        3,
   },
 
-  /** Row holding the section label on the left and the toggle on the right */
+  /** Row holding the year nav on the left and toggle on the right */
   headerRow: {
     flexDirection:  'row',
     alignItems:     'center',
     justifyContent: 'space-between',
-    marginBottom:   16,
+    marginBottom:   6,
   },
 
-  /** "YEAR OVERVIEW" / "YEAR COMPLETION RATE" — small caps style */
+  /** Inline nav: ‹ · year label · › */
+  yearNav: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           6,
+  },
+
+  navArrow: {
+    padding: 2,
+  },
+
+  navArrowDisabled: {
+    opacity: 0.25,
+  },
+
+  navArrowText: {
+    fontSize:   22,
+    color:      '#555',
+    fontWeight: '400',
+    lineHeight: 26,
+  },
+
+  navArrowTextDisabled: {
+    color: '#bbb',
+  },
+
+  yearLabel: {
+    fontSize:   16,
+    fontWeight: '700',
+    color:      '#333',
+  },
+
+  /** "YEAR OVERVIEW" / "YEAR COMPLETION RATE" — small caps style subtitle */
   sectionLabel: {
     fontSize:      11,
     fontWeight:    '800',
     color:         '#ccc',
     letterSpacing: 1.1,
+    marginBottom:  14,
   },
 
-  // ── Count / % toggle pill ── (mirrors MonthCalendarGraph / WeekBarGraph)
+  // ── Count / % toggle pill ──────────────────────────────────────────────
   toggle: {
     flexDirection:   'row',
     backgroundColor: '#f2f2f2',
@@ -347,12 +439,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color:      '#999',
   },
-  /** Applied to the label text of the currently active toggle button */
   toggleLabelActive: {
     color: '#fff',
   },
 
-  /** Flex row containing all 12 MonthBar columns */
   barsRow: {
     flexDirection: 'row',
     alignItems:    'flex-end',

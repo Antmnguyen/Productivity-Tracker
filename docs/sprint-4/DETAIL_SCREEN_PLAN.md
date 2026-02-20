@@ -280,51 +280,65 @@ Four count boxes in a row.
 
 ---
 
-### `WeekBarGraph` (shared)
-Full-width version of `WeeklyMiniChart` — taller bars, labels with actual counts, toggle between raw count and completion %.
+### `WeekBarGraph` (shared) ✅ Navigation built-in
+Full-width 7-bar chart with built-in week navigation. The user can browse past weeks directly inside the card — no separate `WeekNavigator` required.
 
 ```
-Count / %  [toggle pill]
-
+WEEK COMPLETIONS                    [Count | %]
+┌─────────────────────────────────────────────┐
+│  ‹     Feb 10 – Feb 16, 2026     ›          │
+└─────────────────────────────────────────────┘
 ██  █  ▄  ██  ▄   _   _
 M   T  W   T  F   S   S
 8   6  4   8  2   0   0
 ```
-**Props:** `data: DayData[]`, `color: string`
 
-Internally maintains `mode: 'count' | 'percent'` toggle state.
+- `‹` always enabled; `›` disabled on the current week
+- Navigating away from the current week generates **stable mock data** (seeded by week number) — same past week always shows identical values across re-renders
+- `data` prop = current week's real data; past weeks are derived from seed
+
+**Props:** `data: DayData[]`, `color: string`, `initialWeekStart?: Date`, `onWeekChange?: (weekStart: Date) => void`
+
+Internally maintains `mode: 'count' | 'percent'` toggle state and `weekStart: Date` navigation state.
 
 ---
 
-### `MonthCalendarGraph` (shared)
-Calendar grid. Each day is a circle: filled = completed, half = partial (if multiple tasks), empty = nothing done, grey = no tasks scheduled. //tba on circle design could be a growing circle
+### `MonthCalendarGraph` (shared) ✅ Navigation built-in
+Calendar grid with built-in month navigation. `‹` / `›` arrows flank the month/year title in the header row.
 
 ```
-        Feb 2026
+‹  February 2026  ›                 [Count | %]
 Mo Tu We Th Fr Sa Su
                 1  2
  3  4  5  6  7  8  9
-10 11 12 13 14 15 16
-17 18 19 20 21 22 23
-24 25 26 27 28
+...
 ```
-Each day circle is colored by the stat's accent color at varying opacity (0 = transparent, 100% = full color). Tapping a day could show a tooltip count (Phase 6).
 
-**Props:** `year: number`, `month: number`, `data: CalendarDayData[]`, `color: string`
+- `monthTitle` has `minWidth: 130` + `textAlign: center` so arrows stay at a fixed position regardless of month name length (May vs September)
+- `›` disabled on the current month; past months generate stable mock data from a date-based seed
+- Day cells use a **transparent-border ring technique**: a single `View` with `borderRadius` + per-side `borderColor` (colored or `'transparent'`). This is the correct approach — the OS renders per-side borders as a single continuous path with mitered joints, producing naturally concentric rounded inner corners. Do **not** revert to the five-segment clip-box approach.
+
+**Props:** `year: number`, `month: number`, `data: CalendarDayData[]`, `color: string`, `onMonthChange?: (year: number, month: number) => void`
 
 ---
 
-### `YearOverviewGraph` (shared)
-12 vertical bars (Jan–Dec), labeled with month initials. Bar height scales to the month with the most completions. Shows counts on hover/tap (Phase 6).
+### `YearOverviewGraph` (shared) ✅ Navigation built-in
+12 vertical bars (Jan–Dec) with built-in year navigation. `‹` / `›` arrows flank the year label in the header row.
 
 ```
+‹  2026  ›                          [Count | %]
+YEAR OVERVIEW
 ████
      ███
           ██
 J  F  M  A  M  J  J  A  S  O  N  D
-56 42 38 71 29 ...
 ```
-**Props:** `data: MonthData[]`, `color: string`
+
+- `›` disabled on the current year; past years generate stable mock data from a year+month seed
+- Future months (in current year) or all months (in future year) rendered at 30% opacity
+- "YEAR OVERVIEW" / "YEAR COMPLETION RATE" label sits below the nav row as a subtitle
+
+**Props:** `data: MonthData[]`, `color: string`, `initialYear?: number`, `onYearChange?: (year: number) => void`
 
 ---
 
@@ -346,8 +360,10 @@ Horizontal tab strip with 4 options. Pill-style active indicator slides to the s
 
 ---
 
-### `WeekNavigator` (shared — all three screens)
-Shows current week range label with prev/next arrow buttons. Prev is always enabled (capped at earliest data). Next is disabled when on the current week.
+### `WeekNavigator` (standalone — OverallDetailScreen only)
+Shows current week range label with prev/next arrow buttons. This standalone component is available for screens that need to control week navigation externally (e.g. `OverallDetailScreen` where the week scope affects multiple cards simultaneously).
+
+`WeekBarGraph`, `MonthCalendarGraph`, and `YearOverviewGraph` each have navigation **built in** — they do not need `WeekNavigator`.
 ```
   ‹   Feb 10 – Feb 16, 2026   ›
 ```
@@ -856,3 +872,6 @@ Added in this plan:
 - [x] All shared components (`CompletionSummaryCard`, `StreakCard`, etc.) built and ready for all three screen types
 - [x] Mock data is realistic and exercises all UI states (empty streak, 0% completion, etc.) — done for `PermanentDetailScreen`
 - [x] `safePct` extracted and shared — no duplicate implementations
+- [x] `WeekBarGraph` has built-in week navigation — `‹ / ›` arrows browse past weeks with stable mock data per week
+- [x] `MonthCalendarGraph` has built-in month navigation — arrows fixed-width regardless of month name length; transparent-border ring technique for rounded inner corners
+- [x] `YearOverviewGraph` has built-in year navigation — `‹ / ›` arrows browse past years with stable mock data per year
