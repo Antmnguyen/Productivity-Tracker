@@ -22,11 +22,18 @@ import { View, Text, StyleSheet } from 'react-native';
 // TYPES
 // =============================================================================
 
+export interface DataSegment {
+  label: string;  // 'Permanent' | 'One-off'
+  color: string;  // '#34C759' | '#007AFF'
+  count: number;
+}
+
 export interface DayData {
   day: string;    // single character label: 'M', 'T', 'W', 'T', 'F', 'S', 'S'
   count: number;  // raw number of completions that day
   total?: number; // tasks scheduled that day — optional; used by WeekBarGraph for
                   // true per-day completion rate in % mode. WeeklyMiniChart ignores it.
+  segments?: DataSegment[];  // optional — absent = solid bar (no change to existing callers)
 }
 
 interface WeeklyMiniChartProps {

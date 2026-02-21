@@ -45,6 +45,7 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { safePct } from '../../../../core/utils/statUtils';
+import { DataSegment } from '../../WeeklyMiniChart';
 
 // =============================================================================
 // TYPES
@@ -61,6 +62,8 @@ export interface MonthData {
   completed: number;
   /** Total tasks scheduled during this month — used as the denominator in % mode */
   total: number;
+  /** Optional — absent = solid bar. Present = stacked perm/one-off segments. */
+  segments?: DataSegment[];
 }
 
 interface YearOverviewGraphProps {
@@ -169,10 +172,29 @@ const MonthBar: React.FC<MonthBarProps> = ({ item, maxCount, color, isFuture, mo
 
   const barColor = hasActivity ? color : '#e8e8e8';
 
+  // ── Segment heights (stacked bar) ────────────────────────────────────────
+  const segHeights = item.segments?.map(seg => {
+    if (mode === 'percent' && hasTotal) {
+      return Math.max((seg.count / item.total) * BAR_MAX_HEIGHT, 0);
+    }
+    return Math.max((seg.count / maxCount) * BAR_MAX_HEIGHT, 0);
+  });
+
   return (
     <View style={[col.container, isFuture && col.future]}>
       <View style={[col.barArea, { height: BAR_MAX_HEIGHT }]}>
-        <View style={[col.bar, { height: barHeight, backgroundColor: barColor }]} />
+        {item.segments && segHeights ? (
+          <View style={{ width: 14, overflow: 'hidden', borderRadius: 4 }}>
+            {[...item.segments].reverse().map((seg, i) => (
+              <View
+                key={i}
+                style={{ height: segHeights[item.segments!.length - 1 - i], backgroundColor: seg.color }}
+              />
+            ))}
+          </View>
+        ) : (
+          <View style={[col.bar, { height: barHeight, backgroundColor: barColor }]} />
+        )}
       </View>
       <Text style={col.monthLabel}>{MONTH_INITIALS[item.month]}</Text>
       <Text style={[col.valueLabel, hasActivity && { color }]}>

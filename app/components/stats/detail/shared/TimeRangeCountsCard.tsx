@@ -3,33 +3,31 @@
 // TIME RANGE COUNTS CARD
 // =============================================================================
 //
-// Displays four completion counts stacked vertically, one row per time range.
-// Each row has the label on the left and the count on the right.
+// Displays four completion counts, one row per time range (Week/Month/Year/All).
 //
-// Visual layout:
+// ── Simple mode (PermanentDetailScreen — no breakdown) ────────────────────────
 //
-//   ┌──────────────────────────────────────────┐
-//   │  TIMES COMPLETED                         │
-//   ├──────────────────────────────────────────┤
-//   │  This Week                           12  │
-//   ├──────────────────────────────────────────┤
-//   │  This Month                          48  │
-//   ├──────────────────────────────────────────┤
-//   │  This Year                          156  │
-//   ├──────────────────────────────────────────┤
-//   │  All Time                           620  │
-//   └──────────────────────────────────────────┘
+//   TIMES COMPLETED
+//   ─────────────────────────────────────────
+//   This Week                             12
+//   This Month                            48
+//   This Year                            156
+//   All Time                             620
 //
-// The accent color is applied to each count number so each detail screen
-// uses its own color consistently (orange for Overall, category color for
-// Category, blue for Permanent).
+// ── Breakdown mode (Overall + Category — breakdown prop present) ───────────────
+//
+//   TIMES COMPLETED
+//                        Perm    One-off   Total
+//   ─────────────────────────────────────────────
+//   This Week              8         4      12
+//   This Month            30        18      48
+//   This Year             94        62     156
+//   All Time             380       240     620
 //
 // Props:
-//   weekCount     - completions in the current Mon–Sun week
-//   monthCount    - completions in the current calendar month
-//   yearCount     - completions in the current calendar year
-//   allTimeCount  - all-time total completions (no date filter)
-//   color         - hex accent color for the count numbers
+//   weekCount / monthCount / yearCount / allTimeCount — total per range
+//   color      — accent for total column (and section label)
+//   breakdown  — optional; when present switches to 4-column layout
 //
 // Used by:
 //   OverallDetailScreen, CategoryDetailScreen, PermanentDetailScreen
@@ -43,47 +41,94 @@ import { View, Text, StyleSheet } from 'react-native';
 // TYPES
 // =============================================================================
 
+export interface CountBreakdown {
+  perm:  number;
+  oneOff: number;
+}
+
+export interface TimeRangeBreakdown {
+  week:    CountBreakdown;
+  month:   CountBreakdown;
+  year:    CountBreakdown;
+  allTime: CountBreakdown;
+}
+
 interface TimeRangeCountsCardProps {
-  /** Completions this Mon–Sun week */
-  weekCount: number;
-  /** Completions this calendar month */
-  monthCount: number;
-  /** Completions this calendar year */
-  yearCount: number;
-  /** All-time total completions */
+  weekCount:    number;
+  monthCount:   number;
+  yearCount:    number;
   allTimeCount: number;
-  /** Hex accent color — applied to count numbers */
-  color: string;
+  /** Hex accent color — applied to total column and section label */
+  color:        string;
+  /**
+   * Optional perm / one-off breakdown per time range.
+   * When present the card switches to the 4-column table layout.
+   * Omit for PermanentDetailScreen — keeps the existing 2-column layout.
+   */
+  breakdown?:   TimeRangeBreakdown;
 }
 
 // =============================================================================
-// DATA
+// CONSTANTS
 // =============================================================================
 
-// Row definitions in display order.
-// `label` is the left-side text; counts are mapped by index at render time.
-const ROWS = ['This Week', 'This Month', 'This Year', 'All Time'] as const;
+const COLOR_PERM   = '#34C759';
+const COLOR_ONEOFF = '#007AFF';
 
 // =============================================================================
-// SUB-COMPONENT — single count row
+// SUB-COMPONENTS
 // =============================================================================
 
-interface CountRowProps {
-  label: string;
-  count: number;
-  color: string;
-  /** Draw a top hairline divider — applied to every row except the first */
+// ── Simple row (no breakdown) ─────────────────────────────────────────────────
+
+interface SimpleRowProps {
+  label:       string;
+  count:       number;
+  color:       string;
   showDivider: boolean;
 }
 
-/**
- * One row of the card: label flush-left, count flush-right.
- * A hairline top border separates consecutive rows.
- */
-const CountRow: React.FC<CountRowProps> = ({ label, count, color, showDivider }) => (
+const SimpleRow: React.FC<SimpleRowProps> = ({ label, count, color, showDivider }) => (
   <View style={[row.container, showDivider && row.withDivider]}>
     <Text style={row.label}>{label}</Text>
-    <Text style={[row.count, { color }]}>{count}</Text>
+    <Text style={[row.simpleCount, { color }]}>{count}</Text>
+  </View>
+);
+
+// ── Breakdown row (4 columns) ─────────────────────────────────────────────────
+
+interface BreakdownRowProps {
+  label:       string;
+  perm:        number;
+  oneOff:      number;
+  total:       number;
+  color:       string;
+  showDivider: boolean;
+}
+
+const BreakdownRow: React.FC<BreakdownRowProps> = ({
+  label, perm, oneOff, total, color, showDivider,
+}) => (
+  <View style={[row.container, showDivider && row.withDivider]}>
+    <Text style={row.label}>{label}</Text>
+    <Text style={[row.bdCount, { color: COLOR_PERM }]}>{perm}</Text>
+    <Text style={[row.bdCount, { color: COLOR_ONEOFF }]}>{oneOff}</Text>
+    <Text style={[row.bdCount, { color }]}>{total}</Text>
+  </View>
+);
+
+// ── Column header row (breakdown mode only) ───────────────────────────────────
+
+interface ColHeaderProps {
+  color: string;
+}
+
+const ColHeader: React.FC<ColHeaderProps> = ({ color }) => (
+  <View style={row.container}>
+    <View style={{ flex: 1 }} />
+    <Text style={[row.colHeader, { color: COLOR_PERM }]}>Perm</Text>
+    <Text style={[row.colHeader, { color: COLOR_ONEOFF }]}>One-off</Text>
+    <Text style={[row.colHeader, { color }]}>Total</Text>
   </View>
 );
 
@@ -91,23 +136,37 @@ const row = StyleSheet.create({
   container: {
     flexDirection:    'row',
     alignItems:       'center',
-    justifyContent:   'space-between',
     paddingHorizontal: 16,
-    paddingVertical:   13,
+    paddingVertical:   12,
   },
   withDivider: {
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
   },
   label: {
-    fontSize:   15,
+    flex:       1,
+    fontSize:   14,
     color:      '#555',
     fontWeight: '500',
   },
-  count: {
+  simpleCount: {
     fontSize:   22,
     fontWeight: '800',
     lineHeight: 26,
+  },
+  bdCount: {
+    width:      52,
+    fontSize:   17,
+    fontWeight: '700',
+    textAlign:  'right',
+  },
+  colHeader: {
+    width:         52,
+    fontSize:      10,
+    fontWeight:    '700',
+    textAlign:     'right',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
 });
 
@@ -121,28 +180,48 @@ export const TimeRangeCountsCard: React.FC<TimeRangeCountsCardProps> = ({
   yearCount,
   allTimeCount,
   color,
+  breakdown,
 }) => {
-  const counts = [weekCount, monthCount, yearCount, allTimeCount];
+  const totals = [weekCount, monthCount, yearCount, allTimeCount];
+  const labels = ['This Week', 'This Month', 'This Year', 'All Time'];
+  const bds    = breakdown
+    ? [breakdown.week, breakdown.month, breakdown.year, breakdown.allTime]
+    : null;
 
   return (
     <View style={styles.card}>
 
-      {/* ── Section header ────────────────────────────────────────────── */}
+      {/* Section label */}
       <Text style={styles.sectionLabel}>TIMES COMPLETED</Text>
 
-      {/* ── Hairline below the header ──────────────────────────────────── */}
+      {/* Column headers — only in breakdown mode */}
+      {bds && <ColHeader color={color} />}
+
+      {/* Hairline separating header area from rows */}
       <View style={styles.headerDivider} />
 
-      {/* ── Stacked count rows ────────────────────────────────────────── */}
-      {ROWS.map((label, i) => (
-        <CountRow
-          key={label}
-          label={label}
-          count={counts[i]}
-          color={color}
-          showDivider={i > 0}
-        />
-      ))}
+      {/* Data rows */}
+      {labels.map((label, i) =>
+        bds ? (
+          <BreakdownRow
+            key={label}
+            label={label}
+            perm={bds[i].perm}
+            oneOff={bds[i].oneOff}
+            total={totals[i]}
+            color={color}
+            showDivider={i > 0}
+          />
+        ) : (
+          <SimpleRow
+            key={label}
+            label={label}
+            count={totals[i]}
+            color={color}
+            showDivider={i > 0}
+          />
+        )
+      )}
 
     </View>
   );
@@ -166,18 +245,14 @@ const styles = StyleSheet.create({
     elevation:        3,
     overflow:         'hidden',
   },
-
-  // "TIMES COMPLETED" small-caps section label
   sectionLabel: {
     fontSize:          11,
     fontWeight:        '800',
     color:             '#ccc',
     letterSpacing:     1.1,
     paddingHorizontal: 16,
-    marginBottom:      12,
+    marginBottom:      4,
   },
-
-  // Full-width rule between the header and the first row
   headerDivider: {
     height:          1,
     backgroundColor: '#f0f0f0',

@@ -178,19 +178,38 @@ const BarColumn: React.FC<BarColumnProps> = ({ item, maxCount, color, mode }) =>
       ? `${safePct(item.count, item.total!)}%`
       : `${safePct(item.count, maxCount)}%`;
 
+  // ── Segment heights (stacked bar) ──────────────────────────────────────
+  const segHeights = item.segments?.map(seg => {
+    if (mode === 'percent' && hasTotal) {
+      return Math.max((seg.count / item.total!) * BAR_MAX_HEIGHT, 0);
+    }
+    return Math.max((seg.count / maxCount) * BAR_MAX_HEIGHT, 0);
+  });
+
   return (
     <View style={col.container}>
       <View style={[col.barArea, { height: BAR_MAX_HEIGHT }]}>
-        <View
-          style={[
-            col.bar,
-            {
-              height:          barHeight,
-              width:           BAR_WIDTH,
-              backgroundColor: hasActivity ? color : '#e8e8e8',
-            },
-          ]}
-        />
+        {item.segments && segHeights ? (
+          <View style={{ width: BAR_WIDTH, overflow: 'hidden', borderRadius: 5 }}>
+            {[...item.segments].reverse().map((seg, i) => (
+              <View
+                key={i}
+                style={{ height: segHeights[item.segments!.length - 1 - i], backgroundColor: seg.color }}
+              />
+            ))}
+          </View>
+        ) : (
+          <View
+            style={[
+              col.bar,
+              {
+                height:          barHeight,
+                width:           BAR_WIDTH,
+                backgroundColor: hasActivity ? color : '#e8e8e8',
+              },
+            ]}
+          />
+        )}
       </View>
       <Text style={col.dayLabel}>{item.day}</Text>
       <Text style={[col.valueLabel, hasActivity && { color }]}>

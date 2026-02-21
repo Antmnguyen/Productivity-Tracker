@@ -208,7 +208,13 @@ export const MainNavigator: React.FC = () => {
           return <OverallDetailScreen params={statDetailParams} onBack={goBack} />;
         }
         if (statDetailParams.type === 'category') {
-          return <CategoryDetailScreen params={statDetailParams} onBack={goBack} />;
+          return (
+            <CategoryDetailScreen
+              params={statDetailParams}
+              onBack={goBack}
+              onStatCardPress={handleStatCardPress}
+            />
+          );
         }
 
         return null;

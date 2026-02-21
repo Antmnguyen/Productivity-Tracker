@@ -50,6 +50,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { safePct } from '../../../../core/utils/statUtils';
+import { DataSegment } from '../../WeeklyMiniChart';
 
 // =============================================================================
 // TYPES
@@ -74,6 +75,8 @@ export interface DayOfWeekData {
    * Optional — falls back to relative-to-max if not provided.
    */
   total?: number;
+  /** Optional — absent = solid bar. Present = stacked perm/one-off segments. */
+  segments?: DataSegment[];
 }
 
 /** Toggle mode — Count shows raw totals, Percent shows completion rate */
@@ -199,21 +202,41 @@ const DayBar: React.FC<DayBarProps> = ({ item, maxCount, color, isBest, mode }) 
       ? color + '55'  // accent at ~33% opacity for non-best active days
       : '#e8e8e8';    // grey stub for zero days
 
+  // ── Segment heights (stacked bar) ────────────────────────────────────────
+  const barWidth = isBest ? 20 : 16;
+  const segHeights = item.segments?.map(seg => {
+    if (mode === 'percent' && hasTotal) {
+      return Math.max((seg.count / item.total!) * BAR_MAX_HEIGHT, 0);
+    }
+    return Math.max((seg.count / maxCount) * BAR_MAX_HEIGHT, 0);
+  });
+
   return (
     <View style={col.container}>
       {/* Vertical bar — grows upward from the bottom of the bar area */}
       <View style={[col.barArea, { height: BAR_MAX_HEIGHT }]}>
-        <View
-          style={[
-            col.bar,
-            {
-              height:          barHeight,
-              backgroundColor: barColor,
-              // Best day bar is slightly wider to draw the eye
-              width:           isBest ? 20 : 16,
-            },
-          ]}
-        />
+        {item.segments && segHeights ? (
+          <View style={{ width: barWidth, overflow: 'hidden', borderRadius: 5 }}>
+            {[...item.segments].reverse().map((seg, i) => (
+              <View
+                key={i}
+                style={{ height: segHeights[item.segments!.length - 1 - i], backgroundColor: seg.color }}
+              />
+            ))}
+          </View>
+        ) : (
+          <View
+            style={[
+              col.bar,
+              {
+                height:          barHeight,
+                backgroundColor: barColor,
+                // Best day bar is slightly wider to draw the eye
+                width:           barWidth,
+              },
+            ]}
+          />
+        )}
       </View>
 
       {/* Single-char day label (M T W T F S S) */}
