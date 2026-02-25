@@ -70,18 +70,6 @@ const MONTH_INITIALS = ['J','F','M','A','M','J','J','A','S','O','N','D'];
 // HELPERS
 // =============================================================================
 
-function seededRand(seed: number): number {
-  const x = Math.sin(seed + 1) * 10000;
-  return x - Math.floor(x);
-}
-
-/** Generate stable total counts for a past year (no category breakdown). */
-function generatePastYearTotals(year: number): number[] {
-  return Array.from({ length: 12 }, (_, m) => {
-    const r = seededRand(year * 100 + m);
-    return Math.round(r * 38 + 10); // 10–48 per month
-  });
-}
 
 // =============================================================================
 // SUB-COMPONENT — single month bar column
@@ -89,13 +77,11 @@ function generatePastYearTotals(year: number): number[] {
 
 interface MonthBarProps {
   item:     CategoryMonthData;
-  /** Pre-computed total (sum of segments) */
   total:    number;
   maxTotal: number;
   color:    string;
   isFuture: boolean;
-  /** Present for current year; null for past years */
-  segments: CategorySegment[] | null;
+  segments: CategorySegment[];
 }
 
 const MonthBar: React.FC<MonthBarProps> = ({
@@ -106,8 +92,7 @@ const MonthBar: React.FC<MonthBarProps> = ({
   return (
     <View style={[col.container, isFuture && col.future]}>
       <View style={[col.barArea, { height: BAR_MAX_HEIGHT }]}>
-        {segments ? (
-          // Current year — stacked category segments
+        {hasActivity ? (
           <View style={{ width: BAR_WIDTH, overflow: 'hidden', borderRadius: 4 }}>
             {[...segments].reverse().map((seg, i) => {
               const h = Math.max((seg.count / maxTotal) * BAR_MAX_HEIGHT, 0);
@@ -115,15 +100,12 @@ const MonthBar: React.FC<MonthBarProps> = ({
             })}
           </View>
         ) : (
-          // Past year — single solid bar
           <View
             style={{
               width:           BAR_WIDTH,
-              height:          hasActivity
-                ? Math.max((total / maxTotal) * BAR_MAX_HEIGHT, BAR_MIN_HEIGHT)
-                : BAR_MIN_HEIGHT,
+              height:          BAR_MIN_HEIGHT,
               borderRadius:    4,
-              backgroundColor: hasActivity ? color : '#e8e8e8',
+              backgroundColor: '#e8e8e8',
             }}
           />
         )}
@@ -171,32 +153,13 @@ export const CategoryYearOverviewGraph: React.FC<CategoryYearOverviewGraphProps>
     onYearChange?.(next);
   };
 
-  // For the current (initial) year use prop data; for other years generate seeded totals
-  const { displayItems, isPastYear } = useMemo(() => {
-    const baseYear = initialYear ?? currentYear;
-    if (displayYear === baseYear) {
-      return {
-        displayItems: data.map(d => ({
-          month:    d.month,
-          segments: d.segments.length > 0 ? d.segments : (null as CategorySegment[] | null),
-          total:    d.segments.reduce((s, seg) => s + seg.count, 0),
-        })),
-        isPastYear: false,
-      };
-    }
-    // Past or future year — seeded totals, no category breakdown
-    const totals = displayYear < currentYear
-      ? generatePastYearTotals(displayYear)
-      : new Array(12).fill(0);
-    return {
-      displayItems: Array.from({ length: 12 }, (_, m) => ({
-        month:    m,
-        segments: null as CategorySegment[] | null,
-        total:    totals[m],
-      })),
-      isPastYear: displayYear < currentYear,
-    };
-  }, [displayYear, data, initialYear, currentYear]);
+  const displayItems = useMemo(() => {
+    return data.map(d => ({
+      month:    d.month,
+      segments: d.segments,
+      total:    d.segments.reduce((s, seg) => s + seg.count, 0),
+    }));
+  }, [data]);
 
   const maxTotal   = Math.max(...displayItems.map(d => d.total), 1);
   const nowMonth   = new Date().getMonth();
@@ -244,7 +207,7 @@ export const CategoryYearOverviewGraph: React.FC<CategoryYearOverviewGraphProps>
           return (
             <MonthBar
               key={item.month}
-              item={{ month: item.month, segments: [] }}
+              item={item}
               total={item.total}
               maxTotal={maxTotal}
               color={color}

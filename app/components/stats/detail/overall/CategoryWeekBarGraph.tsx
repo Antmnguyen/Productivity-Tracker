@@ -87,10 +87,6 @@ function formatWeekLabel(monday: Date): string {
   return `${sm} ${monday.getDate()} – ${em} ${sunday.getDate()}, ${sunday.getFullYear()}`;
 }
 
-function seededRand(seed: number): number {
-  const x = Math.sin(seed + 1) * 10000;
-  return x - Math.floor(x);
-}
 
 // =============================================================================
 // SUB-COMPONENT — single bar column
@@ -98,12 +94,9 @@ function seededRand(seed: number): number {
 
 interface BarColumnProps {
   day:      string;
-  /** Present for the current week; null for past weeks (solid bar instead) */
-  segments: CategorySegment[] | null;
-  /** Pre-computed total count (sum of segments, or seeded value for past weeks) */
+  segments: CategorySegment[];
   total:    number;
   maxTotal: number;
-  /** Accent color — used for past-week solid bars and the value label */
   color:    string;
 }
 
@@ -113,8 +106,7 @@ const BarColumn: React.FC<BarColumnProps> = ({ day, segments, total, maxTotal, c
   return (
     <View style={col.container}>
       <View style={[col.barArea, { height: BAR_MAX_HEIGHT }]}>
-        {segments ? (
-          // Current week — stacked category segments, bottom-anchored via parent flex-end
+        {hasActivity ? (
           <View style={{ width: BAR_WIDTH, overflow: 'hidden', borderRadius: 5 }}>
             {[...segments].reverse().map((seg, i) => {
               const h = Math.max((seg.count / maxTotal) * BAR_MAX_HEIGHT, 0);
@@ -122,15 +114,12 @@ const BarColumn: React.FC<BarColumnProps> = ({ day, segments, total, maxTotal, c
             })}
           </View>
         ) : (
-          // Past week — single solid bar
           <View
             style={{
               width:           BAR_WIDTH,
-              height:          hasActivity
-                ? Math.max((total / maxTotal) * BAR_MAX_HEIGHT, BAR_MIN_HEIGHT)
-                : BAR_MIN_HEIGHT,
+              height:          BAR_MIN_HEIGHT,
               borderRadius:    5,
-              backgroundColor: hasActivity ? color : '#e8e8e8',
+              backgroundColor: '#e8e8e8',
             }}
           />
         )}
@@ -164,23 +153,14 @@ export const CategoryWeekBarGraph: React.FC<CategoryWeekBarGraphProps> = ({
 
   const currentMonday  = useMemo(() => getMondayOf(new Date()), []);
   const isCurrentWeek  = weekStart.getTime() === currentMonday.getTime();
-  const weekSeed       = Math.floor(weekStart.getTime() / (7 * 24 * 3600 * 1000));
 
-  // Build display items — current week preserves segments, past weeks use seeded totals
   const displayItems = useMemo(() => {
-    if (isCurrentWeek) {
-      return data.map(d => ({
-        day:      d.day,
-        segments: d.segments,
-        total:    d.segments.reduce((s, seg) => s + seg.count, 0),
-      }));
-    }
-    return data.map((d, i) => {
-      const baseTotal = d.segments.reduce((s, seg) => s + seg.count, 0);
-      const total     = Math.round(seededRand(weekSeed * 10 + i) * Math.max(baseTotal, 3));
-      return { day: d.day, segments: null as CategorySegment[] | null, total };
-    });
-  }, [weekStart, data, isCurrentWeek, weekSeed]);
+    return data.map(d => ({
+      day:      d.day,
+      segments: d.segments,
+      total:    d.segments.reduce((s, seg) => s + seg.count, 0),
+    }));
+  }, [data]);
 
   const maxTotal = Math.max(...displayItems.map(d => d.total), 1);
 

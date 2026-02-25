@@ -355,3 +355,36 @@ export async function getTemplateStats(templateId: string): Promise<TemplateStat
   const rows = db.getAllSync<TemplateStats>(`SELECT * FROM template_stats WHERE templateId = ?`, [templateId]);
   return rows.length ? rows[0] : null;
 }
+
+/**
+ * Returns a map from instanceId → template metadata for every row in
+ * template_instances. Used by getAllTasks() to reconstruct `kind` and
+ * `metadata` on tasks loaded from the DB, without N+1 queries.
+ *
+ * Mirrors the logic inside getInstanceById() but batched and synchronous.
+ */
+export function getAllInstanceMetaSync(): Map<string, {
+  templateId:    string;
+  templateTitle: string;
+  autoRepeat:    any;
+}> {
+  const rows = db.getAllSync<{
+    instanceId:    string;
+    templateId:    string;
+    templateTitle: string;
+    autoRepeat:    string | null;
+  }>(
+    `SELECT ti.instanceId, ti.templateId, tmpl.templateTitle, tmpl.autoRepeat
+     FROM template_instances ti
+     JOIN templates tmpl ON tmpl.permanentId = ti.templateId`
+  );
+
+  return new Map(rows.map(r => [
+    r.instanceId,
+    {
+      templateId:    r.templateId,
+      templateTitle: r.templateTitle,
+      autoRepeat:    r.autoRepeat ? JSON.parse(r.autoRepeat) : undefined,
+    },
+  ]));
+}

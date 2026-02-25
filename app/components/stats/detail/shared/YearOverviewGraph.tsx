@@ -42,7 +42,7 @@
 //
 // =============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { safePct } from '../../../../core/utils/statUtils';
 import { DataSegment } from '../../WeeklyMiniChart';
@@ -100,37 +100,6 @@ const MONTH_INITIALS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', '
 // HELPERS — year navigation
 // =============================================================================
 
-/**
- * Deterministic pseudo-random value in [0, 1) from an integer seed.
- * Same seed always returns the same value — ensures consistent mock data
- * when the user re-visits the same past year.
- */
-function seededRand(seed: number): number {
-  const x = Math.sin(seed + 1) * 10000;
-  return x - Math.floor(x);
-}
-
-/**
- * Generates plausible 12-month bar data for a year that isn't the initial year.
- * - Future years: all months return completed = 0, total = 0.
- * - Past years: all 12 months get stable mock counts from a date-based seed.
- */
-function generateYearMockData(year: number): MonthData[] {
-  const nowYear = new Date().getFullYear();
-
-  // Future year — no data
-  if (year > nowYear) {
-    return Array.from({ length: 12 }, (_, m) => ({ month: m, completed: 0, total: 0 }));
-  }
-
-  // Past year — generate stable counts for all 12 months
-  return Array.from({ length: 12 }, (_, m) => {
-    const seed      = year * 100 + m;
-    const r         = seededRand(seed);
-    const completed = Math.round(r * 22 + 6); // 6–28 completions per month
-    return { month: m, completed, total: 28 };
-  });
-}
 
 // =============================================================================
 // SUB-COMPONENT — single month bar column
@@ -280,12 +249,7 @@ export const YearOverviewGraph: React.FC<YearOverviewGraphProps> = ({
   };
 
   // ── Data for the displayed year ──────────────────────────────────────────
-  const displayData = useMemo((): MonthData[] => {
-    // Use prop data when showing the initial (current) year
-    if (displayYear === (initialYear ?? currentYear)) return data;
-    // Generate stable mock data for any other year
-    return generateYearMockData(displayYear);
-  }, [displayYear, data, initialYear, currentYear]);
+  const displayData = data;
 
   const maxCount = Math.max(...displayData.map(d => d.completed), 1);
 

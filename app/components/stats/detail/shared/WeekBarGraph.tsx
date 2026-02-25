@@ -40,7 +40,7 @@
 //
 // =============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { DayData } from '../../WeeklyMiniChart';
 import { safePct } from '../../../../core/utils/statUtils';
@@ -107,39 +107,6 @@ function formatWeekLabel(monday: Date): string {
   return `${sm} ${monday.getDate()} – ${em} ${sunday.getDate()}, ${sunday.getFullYear()}`;
 }
 
-/**
- * Deterministic pseudo-random value in [0, 1) from an integer seed.
- * Same seed always produces the same value — ensures consistent data across
- * re-renders when showing the same past week.
- */
-function seededRand(seed: number): number {
-  const x = Math.sin(seed + 1) * 10000;
-  return x - Math.floor(x);
-}
-
-/**
- * Returns display data for the given week.
- * - If `weekStart` is the current Monday, returns `baseData` unchanged.
- * - Otherwise, derives plausible counts from a stable per-week seed so the
- *   same past week always looks identical across re-renders.
- *
- * Days where `total === 0` (task not scheduled) always return count 0.
- */
-function generateWeekData(weekStart: Date, baseData: DayData[]): DayData[] {
-  const currentMonday = getMondayOf(new Date());
-  if (weekStart.getTime() === currentMonday.getTime()) return baseData;
-
-  // Unique integer seed per calendar week (week number since epoch)
-  const weekSeed = Math.floor(weekStart.getTime() / (7 * 24 * 3600 * 1000));
-
-  return baseData.map((d, i) => {
-    // Unscheduled days stay at 0
-    if (d.total === 0) return { ...d, count: 0 };
-    const maxRef = d.total != null && d.total > 0 ? d.total : Math.max(d.count, 3);
-    const count = Math.round(seededRand(weekSeed * 10 + i) * maxRef);
-    return { ...d, count };
-  });
-}
 
 // =============================================================================
 // SUB-COMPONENT — single bar column
@@ -266,11 +233,7 @@ export const WeekBarGraph: React.FC<WeekBarGraphProps> = ({
   // True when showing the current real week — disables the › arrow
   const isCurrentWeek = weekStart.getTime() === getMondayOf(new Date()).getTime();
 
-  // Data for the displayed week — current week uses baseData, past weeks get mock data
-  const displayData = useMemo(
-    () => generateWeekData(weekStart, data),
-    [weekStart, data],
-  );
+  const displayData = data;
 
   const maxCount = Math.max(...displayData.map(d => d.count), 1);
 

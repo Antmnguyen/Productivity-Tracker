@@ -13,23 +13,25 @@ Stats backend wired end-to-end: storage bugs fixed, `useStats.ts` hook built and
 
 Both functions changed from `COUNT(*) AS count` to `COUNT(CASE WHEN outcome = 'completed' THEN 1 END) AS count`. `CategoryWeekBarGraph` and `CategoryYearOverviewGraph` now exclude auto-failed rows from stacked segment heights.
 
-### 2. Step 4 runtime verification not done
+### ~~2. Step 4 runtime verification — root cause fixed (2026-02-24)~~ ⚠️ runtime testing still needed
 
-The write-side code reads `templateId` from `(task.metadata as any)?.permanentId`. Whether permanent task instances always carry this field in production has not been manually verified.
+**Root cause identified and fixed (2026-02-24):** `tasks` table has no `kind` or `metadata` columns. `getAllTasks()` was loading tasks without them, so `task.kind` was always `undefined` → `completeTask()` / `autoFailOverdueTasks()` fell to the `one_off` branch → `logCompletion()` received `taskKind: 'one_off'` and `templateId: null` for all permanent instances.
 
-**Required tests:**
+**Fix applied:** Added `getAllInstanceMetaSync()` to `permanentTaskStorage.ts` (single JOIN across `template_instances` + `templates`). `getAllTasks()` in `taskStorage.ts` now calls it and reconstructs `kind: 'permanent'` and full `metadata` from the map. See `docs/sprint-4/2026-02-22/fix.md`.
+
+**Runtime testing still required:**
 1. Complete a permanent task → confirm `completion_log` row has `template_id` populated, `task_kind = 'permanent'`
 2. Complete a one-off task → confirm `template_id = NULL`, `task_kind = 'one_off'`
 3. Let a permanent task go overdue → restart app → confirm `auto_failed` row with correct `template_id` and `completed_date = due day`
-4. Confirm permanent **templates** (`metadata.isTemplate = true`) are never passed to `autoFailOverdueTasks()` (they typically have no `dueDate` so they'd be filtered, but worth verifying `getAllTasks()` output)
+4. Confirm permanent **templates** (`metadata.isTemplate = true`) are never passed to `autoFailOverdueTasks()`
 
 ### 3. Step 8 — empty states not done
 
 Not yet verified: zero completions, brand-new user with no history, single-completion edge case. Components are expected to handle zeros gracefully but this has not been tested against real data.
 
-### 4. StatsScreen hook calls unmemorized
+### ~~4. StatsScreen hook calls unmemorized~~ — not worth fixing
 
-`stats.getTodayStats()`, `stats.getOverallStatsList()`, `stats.getTemplateStatsList()`, `stats.getCategoryStatsList()` all run on every `StatsScreen` render. These are synchronous SQLite reads, which are fast, but if perf becomes noticeable wrap them in `useMemo`.
+Assessed 2026-02-24. Typical user (5 templates, 5 categories) = ~47 sync SQLite reads per render ≈ 10–30ms. Not a problem. `useMemo` would also require a dep tracking when the DB changes (no such dep exists — completing a task has no React dep to invalidate the memo). If perf ever matters, the fix is a `statsVersion` context counter incremented on task completion, not `useMemo`.
 
 ---
 
@@ -254,5 +256,6 @@ Assembles `TodayStats` (the shape `TodayCard` expects) from `getTodayRaw()` + `g
 | Step 7 — past-period navigation | ✅ done (2026-02-22) |
 | TodayCard real data | ✅ done (2026-02-22) |
 | Fix `getCompletionsByDayByCategory` / `getCompletionsByMonthByCategory` `COUNT(*)` bug | ✅ done (2026-02-22) |
-| Step 4 runtime verification | ⚠️ needs manual testing |
+| Step 4 runtime verification (code fix) | ✅ done (2026-02-24) |
+| Step 4 runtime verification (manual testing) | ⚠️ needs manual testing |
 | Step 8 — empty states + edge cases | ⬜ pending |

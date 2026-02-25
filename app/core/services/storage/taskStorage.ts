@@ -16,6 +16,7 @@
 
 import { db } from './database';
 import { Task } from '../../types/task';
+import { getAllInstanceMetaSync } from './permanentTaskStorage';
 
 
 /**
@@ -31,7 +32,10 @@ import { Task } from '../../types/task';
  * - Apply business rules
  */
 export async function getAllTasks(): Promise<Task[]> {
-  // Use getAllSync for SELECT queries
+  // One sync query for all permanent instance metadata — no N+1.
+  // Mirrors getInstanceById() in permanentTaskStorage but batched.
+  const instanceMeta = getAllInstanceMetaSync();
+
   const rows = db.getAllSync<{
     id: string;
     title: string;
@@ -42,16 +46,26 @@ export async function getAllTasks(): Promise<Task[]> {
     completed_at: number | null;
   }>('SELECT * FROM tasks ORDER BY created_at DESC');
 
-  // Map SQL rows to Task objects
-  return rows.map(row => ({
-    id: row.id,
-    title: row.title,
-    completed: row.completed === 1, // INTEGER → boolean
-    createdAt: new Date(row.created_at),
-    dueDate: row.due_date ? new Date(row.due_date) : undefined,
-    categoryId: row.category_id || undefined,
-    completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
-  }));
+  return rows.map(row => {
+    const perm = instanceMeta.get(row.id);
+    return {
+      id:          row.id,
+      title:       row.title,
+      completed:   row.completed === 1,
+      createdAt:   new Date(row.created_at),
+      dueDate:     row.due_date     ? new Date(row.due_date)     : undefined,
+      categoryId:  row.category_id  ?? undefined,
+      completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+      // Reconstructed via template_instances + templates join
+      kind:     perm ? 'permanent' : undefined,
+      metadata: perm ? {
+        permanentId:   perm.templateId,
+        templateTitle: perm.templateTitle,
+        isTemplate:    false,
+        autoRepeat:    perm.autoRepeat,
+      } : undefined,
+    };
+  });
 }
 
 /**

@@ -41,7 +41,7 @@
 //
 // =============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, LayoutChangeEvent, TouchableOpacity } from 'react-native';
 
 // =============================================================================
@@ -145,40 +145,6 @@ function getProgressInfo(
   return { hasData: true, fillProgress, fillColor };
 }
 
-// =============================================================================
-// HELPERS — month navigation
-// =============================================================================
-
-/**
- * Deterministic pseudo-random value in [0, 1) from an integer seed.
- */
-function seededRand(seed: number): number {
-  const x = Math.sin(seed + 1) * 10000;
-  return x - Math.floor(x);
-}
-
-/**
- * Generates plausible calendar data for a past month.
- */
-function generateMonthMockData(year: number, month: number): CalendarDayData[] {
-  const now      = new Date();
-  const nowYear  = now.getFullYear();
-  const nowMonth = now.getMonth();
-
-  if (year > nowYear || (year === nowYear && month > nowMonth)) return [];
-
-  const total   = daysInMonth(year, month);
-  const lastDay = (year === nowYear && month === nowMonth) ? now.getDate() : total;
-
-  const result: CalendarDayData[] = [];
-  for (let d = 1; d <= lastDay; d++) {
-    const seed      = year * 10000 + month * 100 + d;
-    const r         = seededRand(seed);
-    const completed = r > 0.25 ? 1 : 0; 
-    result.push({ date: d, completed, total: 1 });
-  }
-  return result;
-}
 
 // =============================================================================
 // SUB-COMPONENT — clockwise colored progress fill
@@ -350,10 +316,7 @@ export const MonthCalendarGraph: React.FC<MonthCalendarGraphProps> = ({
     }
   };
 
-  const displayData = useMemo((): CalendarDayData[] => {
-    if (displayYear === year && displayMonth === month) return data;
-    return generateMonthMockData(displayYear, displayMonth);
-  }, [displayYear, displayMonth, year, month, data]);
+  const displayData = data;
 
   const dataMap  = new Map<number, CalendarDayData>(displayData.map(d => [d.date, d]));
   const maxCount = Math.max(...displayData.map(d => d.completed), 1);
