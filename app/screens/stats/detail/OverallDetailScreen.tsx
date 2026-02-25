@@ -125,6 +125,61 @@ export const OverallDetailScreen: React.FC<OverallDetailScreenProps> = ({
   const now    = new Date();
   const bucket = getBucket(params.id);
 
+  // ── HOW TO CONTROL CARD VISIBILITY ──────────────────────────────────────────
+  //
+  // Each card can be shown or hidden depending on which time bucket the user
+  // tapped (Week / Month / Year / All Time).
+  //
+  // `bucket` is one of four string values:
+  //   'week'     → user opened "This Week"
+  //   'month'    → user opened "This Month"
+  //   'year'     → user opened "This Year"
+  //   'all_time' → user opened "All Time"
+  //
+  // To make a card conditional, define a boolean flag using `bucket`, then
+  // wrap the card's JSX in {showXxx && ( ... )}.
+  //
+  // ── RECIPES ─────────────────────────────────────────────────────────────────
+  //
+  //  Show for ALL buckets (always visible — no flag needed, just render it):
+  //    <MyCard />
+  //
+  //  Show for ONE bucket only:
+  //    const showMyCard = bucket === 'week';
+  //    const showMyCard = bucket === 'month';
+  //    const showMyCard = bucket === 'year';
+  //    const showMyCard = bucket === 'all_time';
+  //
+  //  Hide for ONE bucket, show for everything else:
+  //    const showMyCard = bucket !== 'week';
+  //    const showMyCard = bucket !== 'month';
+  //    const showMyCard = bucket !== 'year';
+  //    const showMyCard = bucket !== 'all_time';
+  //
+  //  Show for TWO specific buckets:
+  //    const showMyCard = bucket === 'year' || bucket === 'all_time';
+  //    const showMyCard = bucket === 'week' || bucket === 'month';
+  //
+  //  Hide for TWO specific buckets:
+  //    const showMyCard = bucket !== 'week' && bucket !== 'month';
+  //    const showMyCard = bucket !== 'year' && bucket !== 'all_time';
+  //
+  // ── HOW TO APPLY THE FLAG ───────────────────────────────────────────────────
+  //
+  //  In the JSX below, wrap the card like this:
+  //
+  //    {showMyCard && (
+  //      <MyCard prop={value} />
+  //    )}
+  //
+  //  To remove an existing flag and always show a card, just unwrap it:
+  //    Before:  {showYear && (<YearOverviewGraph ... />)}
+  //    After:   <YearOverviewGraph ... />
+  //
+  // ── CURRENT FLAGS ───────────────────────────────────────────────────────────
+  // AllCompletions: Week and month should have minimal information to avoid clutter
+  const showCompletions = bucket == 'year' || bucket === 'all_time';
+
   // MonthCalendarGraph: a 7-day window doesn't need a calendar view.
   const showMonth        = bucket !== 'week';
 
@@ -177,15 +232,15 @@ export const OverallDetailScreen: React.FC<OverallDetailScreenProps> = ({
           color={params.color}
         />
 
-        {/* 4. Week / Month / Year / All Time counts with perm/one-off breakdown */}
-        <TimeRangeCountsCard
+        {/* 4. Year / All Time counts with perm/one-off breakdown */}
+        {showCompletions && (<TimeRangeCountsCard
           weekCount={data.weekCount}
           monthCount={data.monthCount}
           yearCount={data.yearCount}
           allTimeCount={data.allTimeCount}
           color={params.color}
           breakdown={data.breakdown}
-        />
+        />)}
 
         {/* 5. 7-bar week chart — segmented perm (green) + one-off (blue) */}
         <WeekBarGraph
