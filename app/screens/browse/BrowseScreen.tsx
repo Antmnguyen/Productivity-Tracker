@@ -110,7 +110,7 @@ import { LocationManagementScreen } from './LocationManagementScreen';
 // means the matching sub-screen is open full-screen.
 //
 // ⚠️  When adding a new section, add its key here first — see STEP 1 above.
-type SubScreen = 'none' | 'categories' | 'history' | 'location' | 'Health connect';
+type SubScreen = 'none' | 'categories' | 'history' | 'location' | 'Health connect' | 'calendar' | 'transfer';
 
 // FeatureItem describes one row in the Browse list — the shape (structure) of
 // the data that drives each card. Every card needs all five fields.
@@ -151,6 +151,20 @@ const FEATURES: FeatureItem[] = [
     description: 'fitness tracker connection',
     icon:        '💓',
     color:       '#33ace5',  // Purple badge
+  },
+  {
+    key:         'calendar',
+    title:       'Calendar',
+    description: 'Connect to google calendar',
+    icon:        '📅',
+    color:       '#4caf50',
+  },
+  {
+    key:         'transfer',           // ← NEW ITEM
+    title:       'Transfer',
+    description: 'Transfer data between devices',
+    icon:        '🔄',
+    color:       '#ff9800',            // Orange badge
   },
   {
     key:         'history',

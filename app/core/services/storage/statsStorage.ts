@@ -282,7 +282,7 @@ export function getCompletionsByDay(
   return db.getAllSync<{ date: string; completed: number; scheduled: number }>(
     `SELECT completed_date AS date,
             COUNT(CASE WHEN outcome = 'completed' THEN 1 END) AS completed,
-            COUNT(CASE WHEN scheduled_date = completed_date THEN 1 END) AS scheduled
+            COUNT(*) AS scheduled
      FROM completion_log
      WHERE completed_date BETWEEN ? AND ?${clause}
      GROUP BY completed_date
@@ -320,7 +320,7 @@ export function getCompletionsByDayWithKind(
     `SELECT completed_date AS date,
             COUNT(CASE WHEN outcome = 'completed' AND task_kind = 'permanent' THEN 1 END) AS permanent,
             COUNT(CASE WHEN outcome = 'completed' AND task_kind = 'one_off'   THEN 1 END) AS oneOff,
-            COUNT(CASE WHEN scheduled_date = completed_date THEN 1 END) AS scheduled
+            COUNT(*) AS scheduled
      FROM completion_log
      WHERE completed_date BETWEEN ? AND ?${clause}
      GROUP BY completed_date
@@ -360,9 +360,7 @@ export function getCompletionsByMonth(
   const rows = db.getAllSync<{ mm: string; completed: number; scheduled: number }>(
     `SELECT substr(completed_date, 6, 2) AS mm,
             COUNT(CASE WHEN outcome = 'completed' THEN 1 END) AS completed,
-            COUNT(CASE WHEN scheduled_date IS NOT NULL
-                        AND substr(scheduled_date, 1, 7) = substr(completed_date, 1, 7)
-                       THEN 1 END) AS scheduled
+            COUNT(*) AS scheduled
      FROM completion_log
      WHERE completed_date BETWEEN ? AND ?${clause}
      GROUP BY mm
@@ -410,9 +408,7 @@ export function getCompletionsByMonthWithKind(
     `SELECT substr(completed_date, 6, 2) AS mm,
             COUNT(CASE WHEN outcome = 'completed' AND task_kind = 'permanent' THEN 1 END) AS permanent,
             COUNT(CASE WHEN outcome = 'completed' AND task_kind = 'one_off'   THEN 1 END) AS oneOff,
-            COUNT(CASE WHEN scheduled_date IS NOT NULL
-                        AND substr(scheduled_date, 1, 7) = substr(completed_date, 1, 7)
-                       THEN 1 END) AS scheduled
+            COUNT(*) AS scheduled
      FROM completion_log
      WHERE completed_date BETWEEN ? AND ?${clause}
      GROUP BY mm
@@ -486,7 +482,7 @@ export function getCompletionsByWeekday(
   return db.getAllSync<{ weekday: number; completed: number; scheduled: number }>(
     `SELECT CAST(strftime('%w', completed_date) AS INTEGER) AS weekday,
             COUNT(CASE WHEN outcome = 'completed' THEN 1 END) AS completed,
-            COUNT(CASE WHEN scheduled_date IS NOT NULL THEN 1 END) AS scheduled
+            COUNT(*) AS scheduled
      FROM completion_log
      ${whereBlock}
      GROUP BY weekday

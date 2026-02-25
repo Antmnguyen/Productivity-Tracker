@@ -1,6 +1,6 @@
 # Changes — 2026-02-24
 
-Two fixes: permanent task kind/metadata missing from loaded tasks; graph components using seeded mock data instead of real DB data for past-period navigation.
+Three fixes: permanent task kind/metadata missing from loaded tasks; graph components using seeded mock data instead of real DB data for past-period navigation; completion rates showing over 100%.
 
 ---
 
@@ -61,6 +61,30 @@ Two fixes: permanent task kind/metadata missing from loaded tasks; graph compone
 - Typical user (~5 templates, ~5 categories): ~47 sync SQLite reads per render ≈ 10–30ms. Imperceptible.
 - No viable dep array: DB changes (task completions) have no corresponding React dep. `useMemo([])` would serve stale data.
 - If perf ever matters: introduce a `statsVersion` context counter incremented on task completion, not `useMemo`.
+
+---
+
+---
+
+## 4. Completion rate over 100% — fixed
+
+**File changed:** `app/core/services/storage/statsStorage.ts`
+
+**Problem:** Five read queries computed a `scheduled` denominator that was a strict *subset* of the `completed` numerator, making `completed / scheduled > 1` common:
+
+| Query | Broken denominator |
+|-------|--------------------|
+| `getCompletionsByDay` | `COUNT(CASE WHEN scheduled_date = completed_date THEN 1 END)` — only tasks completed on their own due date |
+| `getCompletionsByDayWithKind` | same |
+| `getCompletionsByMonth` | `COUNT(CASE WHEN scheduled_date IS NOT NULL AND same-month THEN 1 END)` — tasks in the same month as their due date |
+| `getCompletionsByMonthWithKind` | same |
+| `getCompletionsByWeekday` | `COUNT(CASE WHEN scheduled_date IS NOT NULL THEN 1 END)` — tasks that had any due date |
+
+**Example of the bug:** Complete 5 tasks on Monday, 2 of which had no due date. `completed = 5`, `scheduled = 3` → `safePct(5, 3) = 167%`.
+
+**Fix:** All five queries now use `COUNT(*) AS scheduled` — total rows for that time bucket (completed + auto_failed). This is the correct denominator: every row is exactly one evaluated task, so `completed ≤ COUNT(*)` always holds and rates are capped at 100%.
+
+The semantic meaning of `%` mode in graphs is now: "of all tasks evaluated on this day/month/weekday, what fraction succeeded?" — consistent with how `getCompletionSummary` (used by `CompletionSummaryCard`) already worked.
 
 ---
 

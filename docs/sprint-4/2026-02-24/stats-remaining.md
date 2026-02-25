@@ -43,3 +43,5 @@ Stats — What's Left
 - Permanent task kind/metadata fix (getAllInstanceMetaSync in permanentTaskStorage.ts,
   getAllTasks() in taskStorage.ts)
 - Storage layer, indexes, streak calculations
+- Completion rate >100% fix (5 queries in statsStorage.ts — `scheduled` denominator
+  changed from subset-of-completions to `COUNT(*)` = all evaluated tasks)

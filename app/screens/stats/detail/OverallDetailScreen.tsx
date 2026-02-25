@@ -20,6 +20,29 @@
 //   TaskTypeBreakdownCard ← permanent vs one-off split
 //   CategoryBreakdownCard ← top 5 categories horizontal bar list
 //
+// ── Card visibility by bucket ─────────────────────────────────────────────────
+//
+//   Card                    | All Time | Year | Month | Week
+//   ────────────────────────|──────────|──────|───────|──────
+//   CompletionSummaryCard   |    ✓     |  ✓   |   ✓   |  ✓
+//   StreakCard               |    ✓     |  ✓   |   ✓   |  ✓
+//   TaskTypeBreakdownCard   |    ✓     |  ✓   |   ✓   |  ✓
+//   TimeRangeCountsCard     |    ✓     |  ✓   |   ✓   |  ✓
+//   WeekBarGraph            |    ✓     |  ✓   |   ✓   |  ✓   ← always shown
+//   MonthCalendarGraph      |    ✓     |  ✓   |   ✓   |  ✗   showMonth
+//   YearOverviewGraph       |    ✓     |  ✓   |   ✗   |  ✗   showYear
+//   DayOfWeekPatternCard    |    ✓     |  ✓   |   ✓   |  ✗   showDayOfWeek
+//   CategoryBreakdownCard   |    ✓     |  ✓   |   ✓   |  ✓   ← always shown
+//   CategoryWeekBarGraph    |    ✓     |  ✓   |   ✓   |  ✓   ← always shown
+//   CategoryYearOverviewGraph|   ✓     |  ✓   |   ✗   |  ✗   showCategoryYear
+//
+// Rationale:
+//   - Week bucket: a monthly calendar and day-of-week pattern are not useful
+//     when the window is only 7 days. Year graphs are also hidden.
+//   - Month bucket: a year graph would show mostly empty months; hidden to
+//     avoid confusion. Day-of-week is shown (useful even in a month window).
+//   - Year / All Time: all cards shown.
+//
 // ── Data ─────────────────────────────────────────────────────────────────────
 //
 //   Uses useStats().getOverallDetail(id) — real data from completion_log.
@@ -65,6 +88,12 @@ interface OverallDetailScreenProps {
 
 type OverallBucket = 'week' | 'month' | 'year' | 'all_time';
 
+// Maps the navigation param string (params.id) to the internal bucket enum
+// used by the show* visibility flags below.
+//   'all_week'  → 'week'     (This Week bucket)
+//   'all_month' → 'month'    (This Month bucket)
+//   'all_year'  → 'year'     (This Year bucket)
+//   anything else → 'all_time' (All Time bucket, the default)
 function getBucket(id: string): OverallBucket {
   if (id === 'all_week')  return 'week';
   if (id === 'all_month') return 'month';
@@ -93,11 +122,21 @@ export const OverallDetailScreen: React.FC<OverallDetailScreenProps> = ({
   const [categoryWeeklyData, setCategoryWeeklyData] = useState(data.categoryWeeklyData);
   const [categoryYearlyData, setCategoryYearlyData] = useState(data.categoryYearlyData);
 
-  const now              = new Date();
-  const bucket           = getBucket(params.id);
+  const now    = new Date();
+  const bucket = getBucket(params.id);
+
+  // MonthCalendarGraph: a 7-day window doesn't need a calendar view.
   const showMonth        = bucket !== 'week';
+
+  // YearOverviewGraph: only meaningful when the window spans a full year or more.
   const showYear         = bucket === 'year' || bucket === 'all_time';
+
+  // DayOfWeekPatternCard: a single week has at most 7 data points — not enough
+  // to establish a weekday pattern. Hidden for the week bucket only.
   const showDayOfWeek    = bucket !== 'week';
+
+  // CategoryYearOverviewGraph: mirrors showYear — only shown when the time window
+  // is large enough that a 12-bar year breakdown adds information.
   const showCategoryYear = bucket === 'year' || bucket === 'all_time';
 
   return (
@@ -155,7 +194,7 @@ export const OverallDetailScreen: React.FC<OverallDetailScreenProps> = ({
           onWeekChange={weekStart => setWeeklyData(stats.getWeekBarData(weekStart))}
         />
 
-        {/* 6. Calendar grid for the current month */}
+        {/* 6. Calendar grid for the current month (showMonth — hidden for week bucket) */}
         {showMonth && (
           <MonthCalendarGraph
             year={now.getFullYear()}
@@ -166,7 +205,7 @@ export const OverallDetailScreen: React.FC<OverallDetailScreenProps> = ({
           />
         )}
 
-        {/* 7. 12-bar year overview — segmented bars */}
+        {/* 7. 12-bar year overview — segmented bars (showYear — hidden for week + month buckets) */}
         {showYear && (
           <YearOverviewGraph
             data={yearlyData}
@@ -175,7 +214,7 @@ export const OverallDetailScreen: React.FC<OverallDetailScreenProps> = ({
           />
         )}
 
-        {/* 8. All-time completions by weekday — segmented bars */}
+        {/* 8. All-time completions by weekday — segmented bars (showDayOfWeek — hidden for week bucket) */}
         {showDayOfWeek && (
           <DayOfWeekPatternCard
             data={data.dayOfWeekData}
@@ -196,7 +235,7 @@ export const OverallDetailScreen: React.FC<OverallDetailScreenProps> = ({
           onWeekChange={weekStart => setCategoryWeeklyData(stats.getCategoryWeekBarData(weekStart))}
         />
 
-        {/* 11. Year overview stacked by category color */}
+        {/* 11. Year overview stacked by category color (showCategoryYear — mirrors showYear, hidden for week + month) */}
         {showCategoryYear && (
           <CategoryYearOverviewGraph
             data={categoryYearlyData}
