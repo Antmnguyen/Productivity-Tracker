@@ -3,22 +3,45 @@
 // CREATE TASK SCREEN
 // =============================================================================
 //
-// Bare bones task creation screen with three sections:
-// 1. Task name (text input)
-// 2. Due date (Today / Tomorrow / Pick Date + native DateTimePicker)
-// 3. Task type (selectable button list — expandable later with dynamic types)
+// WHAT YOU SEE ON SCREEN:
+//   A white navigation bar at the top with "Cancel" on the left and "Save"
+//   on the right. Below that, a scrollable form with three sections:
+//     1. TASK NAME   — a text box where you type what needs to be done
+//     2. DUE DATE    — three quick-pick buttons (Today / Tomorrow / Pick Date)
+//                      plus a small readout showing the currently selected date
+//     3. CATEGORY    — a row of colour-coded category pills to group the task
 //
-// UI only — no backend calls here. The parent screen receives form data
-// through the onSave callback and decides what to do with it.
+//   The keyboard opens automatically when this screen appears, placing the
+//   cursor inside the Task Name field so you can start typing immediately.
+//
+// WHAT YOU CAN DO:
+//   - Type a task name (required — you cannot save without it)
+//   - Quickly set the due date to Today or Tomorrow with one tap, or open the
+//     phone's built-in calendar picker to choose any future date
+//   - Optionally assign the task to a category
+//   - Tap "Save" to create the task (validated first — name must not be empty)
+//   - Tap "Cancel" to go back without creating anything
+//
+// WHERE DATA GOES WHEN YOU SAVE:
+//   The form data (title, dueDate, categoryId) is packaged into a
+//   CreateTaskFormData object and handed to the onSave callback. The parent
+//   screen/navigator (TasksStack) receives it and passes it to
+//   taskActions.createTask() which saves it to local storage.
+//
+// DATE PICKER BEHAVIOUR BY PLATFORM:
+//   iOS     — A scrollable spinner appears inline below the "Pick Date" button
+//             and stays visible until you navigate away.
+//   Android — A native modal calendar dialog pops up and closes automatically
+//             once you confirm a date.
 //
 // PATTERNS:
-// - Date picker reuses the same approach as UsePermanentTaskScreen
-// - Style conventions match CreatePermanentTaskScreen and UsePermanentTaskScreen
-// - TASK_TYPE_OPTIONS array is a placeholder; replace with dynamic list later
+//   - Date picker logic reuses the same approach as UsePermanentTaskScreen
+//   - Style conventions match CreatePermanentTaskScreen and UsePermanentTaskScreen
+//   - TASK_TYPE_OPTIONS array is a placeholder; replace with dynamic list later
 //
 // TODO:
-// - Replace hardcoded TASK_TYPE_OPTIONS with user-created task types from storage
-// - Wire onSave to taskActions.createTask() in TasksStack
+//   - Replace hardcoded TASK_TYPE_OPTIONS with user-created task types from storage
+//   - Wire onSave to taskActions.createTask() in TasksStack
 // =============================================================================
 
 import React, { useState } from 'react';
@@ -48,6 +71,7 @@ type QuickDateOption = 'today' | 'tomorrow' | 'custom';
 /**
  * Returns a Date set to end-of-day (23:59:59.999) for the given quick option.
  * 'today' = today's end-of-day, 'tomorrow' = tomorrow's end-of-day.
+ * End-of-day is used so a task due "Today" doesn't become overdue mid-afternoon.
  */
 const getQuickDate = (option: 'today' | 'tomorrow'): Date => {
   const date = new Date();
@@ -60,7 +84,8 @@ const getQuickDate = (option: 'today' | 'tomorrow'): Date => {
 
 /**
  * Formats a Date into a human-readable label for the "Selected:" display.
- * Shows "Today" / "Tomorrow" for those cases, otherwise a short date string.
+ * Shows "Today" / "Tomorrow" for those cases, otherwise a short date string
+ * like "Mon, Feb 3".
  */
 const formatDateDisplay = (date: Date): string => {
   const today = new Date();
@@ -118,26 +143,29 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
   // HOOKS
   // =========================================================================
 
-  // Load categories from storage
+  // Load categories from storage so the CategorySelector can display them.
+  // categoriesLoading is true while they are being fetched.
   const { categories, loading: categoriesLoading } = useCategories();
 
   // =========================================================================
   // STATE
   // =========================================================================
 
-  // Task name typed by user
+  // The task name the user types — empty at first, required before saving
   const [title, setTitle] = useState('');
 
-  // Currently selected due date — defaults to today (end of day)
+  // Currently selected due date — defaults to today at end of day
   const [dueDate, setDueDate] = useState<Date>(getQuickDate('today'));
 
-  // Which quick-date button is highlighted (today/tomorrow/custom)
+  // Which quick-date button is highlighted: 'today', 'tomorrow', or 'custom'
+  // Starts as 'today' because the default date is today
   const [selectedQuickOption, setSelectedQuickOption] = useState<QuickDateOption>('today');
 
-  // Controls whether the native DateTimePicker is visible
+  // Controls whether the native DateTimePicker is visible on screen
+  // (iOS spinner or Android dialog)
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // Currently selected category — null means none selected
+  // Currently selected category — null means no category chosen yet
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
 
   // =========================================================================
@@ -146,7 +174,8 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
 
   /**
    * Called when user taps "Today" or "Tomorrow" quick-select button.
-   * Sets the due date, highlights that button, and hides the custom picker.
+   * Sets the due date to end-of-day for that option, highlights that button,
+   * and hides the custom date picker if it was open.
    */
   const handleQuickDateSelect = (option: 'today' | 'tomorrow') => {
     setSelectedQuickOption(option);
@@ -157,6 +186,7 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
   /**
    * Called when user taps "Pick Date" button.
    * Highlights the custom option and opens the native DateTimePicker.
+   * On iOS the spinner appears inline; on Android a modal dialog opens.
    */
   const handleCustomDatePress = () => {
     setSelectedQuickOption('custom');
@@ -164,9 +194,11 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
   };
 
   /**
-   * Callback from the native DateTimePicker.
-   * On Android the picker auto-dismisses after selection.
-   * On iOS it stays open (inline spinner) until user navigates away.
+   * Callback from the native DateTimePicker when the user picks a date.
+   * On Android the picker auto-dismisses after selection (we close it manually
+   * to be safe). On iOS it stays open as an inline spinner.
+   * Only updates the date if the user confirmed (event.type === 'set') rather
+   * than cancelled.
    */
   const handleDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
     // Android: picker closes itself after user picks or cancels
@@ -183,10 +215,12 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
 
   /**
    * Called when user taps "Save" in the header.
-   * Validates required fields and passes form data up to parent via onSave.
+   * Checks that a task name was entered, then packages the form data and
+   * hands it to the parent via onSave. The parent decides what to do next
+   * (usually calls taskActions.createTask and navigates back).
    */
   const handleSave = () => {
-    // Title is the only required field
+    // Title is the only required field — show an alert if it's blank
     if (!title.trim()) {
       Alert.alert('Required', 'Please enter a task name.');
       return;
@@ -202,24 +236,32 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
 
   /**
    * Called when user taps "Cancel" in the header.
-   * Parent handles navigation (typically goBack).
+   * Parent handles navigation (typically goBack), nothing is saved.
    */
   const handleCancel = () => {
     onCancel?.();
   };
 
   // =========================================================================
-  // RENDER
+  // RENDER — what gets drawn on screen
   // =========================================================================
 
   return (
+    // SafeAreaView ensures content stays within the safe zone (avoids notch/home bar)
     <SafeAreaView style={styles.container}>
 
-      {/* ================================================================= */}
-      {/* HEADER — Cancel (left), title (center), Save (right)              */}
-      {/* Matches the header pattern used in CreatePermanentTaskScreen and   */}
-      {/* UsePermanentTaskScreen for visual consistency.                     */}
-      {/* ================================================================= */}
+      {/* =================================================================
+          HEADER BAR
+          A white bar spanning the full width of the screen. Contains:
+            - "Cancel" button on the far left (blue, regular weight)
+            - "Create Task" title text centred between them
+            - "Save" button on the far right (blue, bold — stands out)
+          A hairline grey border sits at the bottom edge.
+          Tapping "Cancel" calls handleCancel (navigates back, no save).
+          Tapping "Save" calls handleSave (validates then saves).
+          Matches the header pattern used in CreatePermanentTaskScreen and
+          UsePermanentTaskScreen for visual consistency across all create flows.
+          ================================================================= */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancel} style={styles.headerButton}>
           <Text style={styles.headerButtonText}>Cancel</Text>
@@ -230,16 +272,23 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* ScrollView wraps all form sections so the screen scrolls if       */}
-      {/* content overflows (e.g. when the iOS date spinner is visible).    */}
-      {/* keyboardShouldPersistTaps="handled" prevents keyboard dismissal   */}
-      {/* when tapping buttons inside the scroll area.                      */}
+      {/* ScrollView wraps all form sections so the screen can scroll when
+          the keyboard is open or the iOS date spinner is visible, preventing
+          content from being hidden behind the keyboard.
+          keyboardShouldPersistTaps="handled" means tapping a button while the
+          keyboard is open fires the button's action instead of just closing
+          the keyboard. */}
       <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
 
-        {/* =============================================================== */}
-        {/* SECTION 1: TASK NAME                                            */}
-        {/* Simple text input. Required field — validated on Save.          */}
-        {/* =============================================================== */}
+        {/* ===============================================================
+            SECTION 1: TASK NAME (required)
+            A white card containing:
+              - Small grey uppercase label "TASK NAME *"
+              - Rounded text input box (keyboard opens automatically on mount)
+              - Grey placeholder text "What needs to be done?"
+            As the user types, title state updates live.
+            If you tap Save with this empty, an alert pops up.
+            =============================================================== */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>TASK NAME *</Text>
           <TextInput
@@ -252,19 +301,31 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
           />
         </View>
 
-        {/* =============================================================== */}
-        {/* SECTION 2: DUE DATE                                             */}
-        {/* Three quick-select buttons + optional native date picker.       */}
-        {/* Same pattern as UsePermanentTaskScreen for consistency.          */}
-        {/* =============================================================== */}
+        {/* ===============================================================
+            SECTION 2: DUE DATE
+            A white card containing:
+              - Small grey uppercase label "DUE DATE"
+              - A row of three equal-width buttons: [Today] [Tomorrow] [Pick Date]
+                The active/selected button turns solid blue with white text.
+                Inactive buttons are light grey with dark text.
+              - A grey rounded readout below the buttons showing the currently
+                selected date, e.g. "Selected:  Today" or "Selected:  Mon, Feb 3"
+              - If "Pick Date" was tapped:
+                  iOS     — a scrollable date spinner appears inline below
+                  Android — a native calendar dialog opens as a popup
+            Picking a date via the calendar auto-selects the 'custom' button
+            and deselects Today/Tomorrow.
+            Same pattern as UsePermanentTaskScreen for consistency.
+            =============================================================== */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>DUE DATE</Text>
 
-          {/* Row of three quick-select buttons: Today | Tomorrow | Pick Date */}
-          {/* The currently active option gets the "selected" highlight style */}
+          {/* Row of three quick-select buttons: Today | Tomorrow | Pick Date.
+              Each button checks if it matches selectedQuickOption to decide
+              whether to apply the blue "selected" style or remain grey. */}
           <View style={styles.quickDateContainer}>
 
-            {/* TODAY button */}
+            {/* TODAY button — tapping sets the due date to end of today */}
             <TouchableOpacity
               style={[
                 styles.quickDateButton,
@@ -282,7 +343,7 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
               </Text>
             </TouchableOpacity>
 
-            {/* TOMORROW button */}
+            {/* TOMORROW button — tapping sets the due date to end of tomorrow */}
             <TouchableOpacity
               style={[
                 styles.quickDateButton,
@@ -300,7 +361,8 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
               </Text>
             </TouchableOpacity>
 
-            {/* PICK DATE button — opens the native DateTimePicker */}
+            {/* PICK DATE button — tapping opens the phone's built-in date picker
+                so the user can choose any future date from a calendar or spinner */}
             <TouchableOpacity
               style={[
                 styles.quickDateButton,
@@ -319,13 +381,18 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Shows the currently selected date in a readable format */}
+          {/* Readout bar below the buttons: displays "Selected: Today" (or the
+              formatted date). The label is grey and the value is black and bold.
+              This always reflects the current dueDate state. */}
           <View style={styles.selectedDateDisplay}>
             <Text style={styles.selectedDateLabel}>Selected:</Text>
             <Text style={styles.selectedDateValue}>{formatDateDisplay(dueDate)}</Text>
           </View>
 
-          {/* iOS: inline spinner date picker (stays visible until dismissed) */}
+          {/* iOS date picker — appears as an inline scroll-wheel spinner below
+              the readout bar, only when the user has tapped "Pick Date".
+              Stays visible until the user taps away or selects Today/Tomorrow.
+              minimumDate prevents picking dates in the past. */}
           {Platform.OS === 'ios' && showDatePicker && (
             <DateTimePicker
               value={dueDate}
@@ -337,7 +404,9 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
             />
           )}
 
-          {/* Android: modal date picker (auto-dismisses after selection) */}
+          {/* Android date picker — appears as a native modal dialog (calendar sheet)
+              that overlays the screen. Auto-dismisses after the user taps a date
+              or taps Cancel on the dialog. */}
           {Platform.OS === 'android' && showDatePicker && (
             <DateTimePicker
               value={dueDate}
@@ -349,10 +418,16 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
           )}
         </View>
 
-        {/* =============================================================== */}
-        {/* SECTION 3: CATEGORY SELECTOR                                    */}
-        {/* Reusable component shared with CreatePermanentTaskScreen        */}
-        {/* =============================================================== */}
+        {/* ===============================================================
+            SECTION 3: CATEGORY SELECTOR
+            A reusable component that shows the user's categories as a
+            horizontally scrollable row of colour-coded pills. Tapping a pill
+            selects it (it becomes highlighted in the category's colour) and
+            tapping again deselects it.
+            If no categories exist yet, it will show an empty or loading state.
+            The same CategorySelector component is used in
+            CreatePermanentTaskScreen, so the visual style is identical.
+            =============================================================== */}
         <CategorySelector
           selectedCategory={selectedCategory}
           onSelectCategory={setSelectedCategory}
@@ -360,7 +435,9 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
           loading={categoriesLoading}
         />
 
-        {/* Extra space at bottom so content isn't hidden behind keyboard */}
+        {/* Invisible spacer below all sections. Prevents the last card from
+            being flush against the bottom edge or hidden behind the keyboard
+            when the user scrolls to the bottom. */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </SafeAreaView>
@@ -369,73 +446,79 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
 
 // =============================================================================
 // STYLES
-// =============================================================================
+// Visual appearance definitions — each comment describes what you see on screen.
 // Matches the style conventions from CreatePermanentTaskScreen and
 // UsePermanentTaskScreen: white section cards on grey background,
 // blue (#007AFF) accent for selected states and header buttons.
 // =============================================================================
 
 const styles = StyleSheet.create({
-  // Root container — grey background visible between white section cards
+  // Root container — grey background (#f5f5f5) is visible between white cards
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
 
   // ----- Header -----
-  // Horizontal bar: [Cancel]  Create Task  [Save]
+  // Horizontal white bar: [Cancel]  Create Task  [Save]
+  // The hairline border at the bottom is the thinnest line the screen can render
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row',            // items laid out left-to-right
+    justifyContent: 'space-between', // Cancel to left, Save to right
+    alignItems: 'center',            // vertically centred
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#fff',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#ddd',
   },
+  // "Create Task" — medium weight, centred automatically by space-between
   headerTitle: {
     fontSize: 17,
     fontWeight: '600',
     color: '#000',
   },
+  // Tap-target wrapper around "Cancel" and "Save" — padded for easier tapping
   headerButton: {
     paddingVertical: 8,
     paddingHorizontal: 4,
   },
+  // Blue text used for both "Cancel" and "Save"
   headerButtonText: {
     fontSize: 17,
     color: '#007AFF',
   },
-  // "Save" button is bold to stand out from "Cancel"
+  // Applied in addition to headerButtonText — makes "Save" bold
   saveButtonText: {
     fontWeight: '600',
   },
 
   // ----- Scrollable content area -----
+  // Takes up all vertical space below the header
   content: {
     flex: 1,
   },
 
   // ----- White section card -----
-  // Each form section (name, date, type) is a white card with top margin
+  // Each form section (name, date, category) is a white card with a top margin
+  // that reveals the grey background behind it, creating a visual separation
   section: {
     backgroundColor: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    marginTop: 16,
+    marginTop: 16,     // gap above each card shows the grey background
   },
-  // Uppercase grey label at top of each section
+  // Uppercase grey label at the top of each section, e.g. "TASK NAME *"
   sectionLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: '#666',
     marginBottom: 8,
-    letterSpacing: 0.5,
+    letterSpacing: 0.5,  // subtle spacing makes uppercase text more readable
   },
 
-  // ----- Text input -----
-  // Used for the task name field
+  // ----- Text input (task name field) -----
+  // Rounded box with a very light grey fill and a thin border
   textInput: {
     fontSize: 16,
     color: '#000',
@@ -447,14 +530,18 @@ const styles = StyleSheet.create({
     borderColor: '#e5e5e5',
   },
 
-  // ----- Quick date buttons -----
-  // Horizontal row of Today | Tomorrow | Pick Date
+  // ----- Quick date buttons row -----
+  // Three buttons side by side: Today | Tomorrow | Pick Date
+  // gap: 10 puts a small space between each button
   quickDateContainer: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 16,
+    marginBottom: 16,  // space between the buttons and the date readout below
   },
-  // Individual date button — grey by default
+  // Individual date button — flex:1 makes all three share the row width equally.
+  // Grey background with rounded corners in unselected state.
+  // The transparent 2px border in the unselected state reserves space so the
+  // layout doesn't shift when the selected border (also 2px) appears.
   quickDateButton: {
     flex: 1,
     paddingVertical: 12,
@@ -463,26 +550,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: 'transparent',  // invisible border keeps layout stable
   },
-  // Selected state — blue background and border
+  // Selected state — solid blue background and matching blue border
   quickDateButtonSelected: {
     backgroundColor: '#007AFF',
     borderColor: '#007AFF',
   },
-  // Button text — dark by default
+  // Button text — dark grey in unselected state
   quickDateButtonText: {
     fontSize: 15,
     fontWeight: '500',
     color: '#333',
   },
-  // Selected button text — white on blue
+  // White text on the blue selected button
   quickDateButtonTextSelected: {
     color: '#fff',
   },
 
   // ----- Selected date readout -----
-  // Grey pill showing "Selected: Today" or "Selected: Mon, Feb 3"
+  // A rounded grey pill showing "Selected:  Today" or "Selected:  Mon, Feb 3"
+  // flexDirection: 'row' puts the label and value side by side on one line
   selectedDateDisplay: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -491,11 +579,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
+  // "Selected:" — grey label on the left
   selectedDateLabel: {
     fontSize: 15,
     color: '#666',
     marginRight: 8,
   },
+  // The actual date value — black and bold, e.g. "Today" or "Mon, Feb 3"
   selectedDateValue: {
     fontSize: 16,
     fontWeight: '600',
@@ -503,13 +593,15 @@ const styles = StyleSheet.create({
   },
 
   // ----- iOS date picker spinner -----
+  // Fixed height so the spinner doesn't collapse or overflow when shown inline
   iosDatePicker: {
     height: 150,
     marginTop: 8,
   },
 
   // ----- Bottom spacer -----
-  // Prevents content from being cut off behind keyboard or safe area
+  // Invisible padding at the very end of the scroll area.
+  // Prevents the last form section from touching the keyboard edge when scrolled down.
   bottomSpacer: {
     height: 40,
   },
