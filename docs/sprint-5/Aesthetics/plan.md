@@ -368,14 +368,28 @@ Consistent across all overlay screens. Currently UseTemplate has a debug
 `rgba(0,122,255,0.1)` background on header buttons — **remove this in
 implementation** (it was noted as a debug visual in the source).
 
-### 4.3 Empty State Improvements
+### 4.3 TodayScreen Filter Tab Bar ✅
+
+A horizontal filter tab bar (matching the style from `HistoryManagementScreen`) was added directly below the green header in `TodayScreen`. The three tabs are:
+
+| Tab | Filter Applied |
+|-----|---------------|
+| **Today** | `filterTasksDueToday()` — tasks due today (default) |
+| **This Week** | `filterTasksDueThisWeek()` — Mon–Sun current week |
+| **This Month** | `filterTasksDueThisMonth()` — current calendar month |
+
+The active tab is highlighted with the screen's brand green (`#34C759`). Inactive tabs use `theme.bgInput` / `theme.textSecondary` so they respond to dark mode. The empty message also updates dynamically to match the selected filter (e.g. "No tasks due this week!").
+
+New filter functions `filterTasksDueThisWeek` and `filterTasksDueThisMonth` were added to `app/core/utils/taskFilters.ts` to support this.
+
+### 4.4 Empty State Improvements
 
 Current empty states are plain centred text. Improve:
 - Add an icon/emoji above the empty message (AllTasks: `📭`, Today: `☀️`)
 - Use `theme.textSecondary` for the message colour
 - Keep them simple — no elaborate illustration
 
-### 4.4 BrowseScreen / CategoryManagementScreen
+### 4.5 BrowseScreen / CategoryManagementScreen
 
 Category list rows in `CategoryManagementScreen` already show a colour dot.
 No change needed there — the colour dot is already the category's hex colour.
@@ -401,7 +415,7 @@ No change needed there — the colour dot is already the category's hex colour.
 | `app/components/navigation/TabBar.tsx` | Theme tokens — bg, border, active/inactive label colours | ✅ Done |
 | `app/navigation/MainNavigator.tsx` | Theme token for container bg | ✅ Done |
 | `app/screens/tasks/AllTasksScreen.tsx` | Theme tokens — bgScreen (header brand colour kept) | ✅ Done |
-| `app/screens/today/TodayScreen.tsx` | Theme tokens — bgScreen (header brand colour kept) | ✅ Done |
+| `app/screens/today/TodayScreen.tsx` | Theme tokens — bgScreen (header brand colour kept); Day/Week/Month filter tab bar added | ✅ Done |
 | `app/screens/stats/StatsScreen.tsx` | Theme tokens — bgScreen, CollapsibleSection card bg + text | ✅ Done |
 | `app/screens/browse/HistoryManagementScreen.tsx` | Theme tokens — all surfaces, filter bar, rows | ✅ Done |
 | `app/screens/tasks/CreateTaskScreen.tsx` | Theme tokens — all surfaces, inputs, buttons | ✅ Done |

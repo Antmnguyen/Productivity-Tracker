@@ -188,17 +188,18 @@ const styles = StyleSheet.create({
   filterBar: {
     borderBottomWidth: 1,
     flexShrink:        0,
+    flexGrow:          0,
   },
   filterBarContent: {
     paddingHorizontal: 12,
-    paddingVertical:   10,
+    paddingVertical:   6,
     gap:               8,
     flexDirection:     'row',
   },
   filterTab: {
-    paddingHorizontal: 14,
-    paddingVertical:   8,
-    borderRadius:      16,
+    paddingHorizontal: 12,
+    paddingVertical:   5,
+    borderRadius:      14,
   },
   filterTabActive: {
     backgroundColor: ACCENT,
