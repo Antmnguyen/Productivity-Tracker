@@ -69,31 +69,52 @@ export async function getTemplateById(templateId: string): Promise<PermanentTask
 }
 
 /**
- * Get all templates
+ * Get all templates, including each template's category colour.
+ *
+ * The LEFT JOIN on categories denormalises `category_color` so that
+ * UsePermanentTaskScreen can paint the category colour strip on each
+ * template row without making a separate DB call per row.
+ *
+ * category_color is NULL when:
+ *   - the template has no categoryId, OR
+ *   - the referenced category has no colour set
+ * In both cases the UI falls back to theme.categoryStripNone.
  */
 export async function getAllTemplates(): Promise<PermanentTask[]> {
   const rows = db.getAllSync<{
-    permanentId: string;
-    templateTitle: string;
-    isTemplate: number;
-    instanceCount: number;
-    autoRepeat: string | null;
-    location: string | null;
-    createdAt: number;
-    category_id: string | null;
-  }>(`SELECT * FROM templates WHERE isTemplate = 1 ORDER BY createdAt DESC`);
+    permanentId:    string;
+    templateTitle:  string;
+    isTemplate:     number;
+    instanceCount:  number;
+    autoRepeat:     string | null;
+    location:       string | null;
+    createdAt:      number;
+    category_id:    string | null;
+    category_color: string | null; // aliased from categories.color via LEFT JOIN
+  }>(`
+    SELECT t.permanentId, t.templateTitle, t.isTemplate, t.instanceCount,
+           t.autoRepeat, t.location, t.createdAt, t.category_id,
+           c.color AS category_color
+    FROM   templates t
+    LEFT JOIN categories c ON c.id = t.category_id
+    WHERE  t.isTemplate = 1
+    ORDER BY t.createdAt DESC
+  `);
 
   return rows.map(row => ({
-    id: row.permanentId,
-    permanentId: row.permanentId,
+    id:            row.permanentId,
+    permanentId:   row.permanentId,
     templateTitle: row.templateTitle,
-    isTemplate: Boolean(row.isTemplate),
+    isTemplate:    Boolean(row.isTemplate),
     instanceCount: row.instanceCount,
-    autoRepeat: row.autoRepeat ? JSON.parse(row.autoRepeat) : undefined,
-    location: row.location || undefined,
-    createdAt: row.createdAt,
-    completed: false,
-    categoryId: row.category_id || undefined,
+    autoRepeat:    row.autoRepeat ? JSON.parse(row.autoRepeat) : undefined,
+    location:      row.location || undefined,
+    createdAt:     row.createdAt,
+    completed:     false,
+    categoryId:    row.category_id    || undefined,
+    // Denormalised colour — passed straight through to the Task object so
+    // UsePermanentTaskScreen doesn't need a second query to look it up.
+    categoryColor: row.category_color || undefined,
   }));
 }
 

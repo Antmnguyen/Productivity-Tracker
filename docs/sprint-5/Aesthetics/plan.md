@@ -1,6 +1,6 @@
 # Sprint 5 — Aesthetics Plan
 
-> **Status: DARK MODE COMPLETE** — All screens and shared components themed. Pillar 2 (Category Colour Strips) and Pillar 3 (Permanent/One-off distinction) are next.
+> **Status: PILLARS 1, 2 & 3 COMPLETE** — Dark mode, category colour strips, and permanent task visual identity all implemented. Pillar 4 (General Polish) is next.
 
 ---
 
@@ -11,8 +11,8 @@ Four pillars:
 | # | Feature | Summary | Status |
 |---|---------|---------|--------|
 | 1 | **Dark Mode** | Manual toggle in BrowseScreen, persisted via app_settings, full token system | ✅ Complete |
-| 2 | **Category Color Strips** | Left accent strip on every task card and template row, coloured by the task's category | ⏳ Planned |
-| 3 | **Permanent vs One-Off Distinction** | Visual difference between recurring (permanent) tasks and one-off tasks in the task lists | ⏳ Planned |
+| 2 | **Category Color Strips** | Left accent strip on every task card and template row, coloured by the task's category | ✅ Complete |
+| 3 | **Permanent vs One-Off Distinction** | Visual difference between recurring (permanent) tasks and one-off tasks in the task lists | ✅ Complete |
 | 4 | **General Polish** | Completed task dimming, header consistency, empty state improvements | ⏳ Planned |
 
 ---
@@ -197,83 +197,84 @@ const theme = useTheme();
 
 ---
 
-## 2 — Category Color Strips
+## 2 — Category Color Strips ✅
 
 ### Goal
-Every task card shows a 4 px coloured left strip matching its category colour.
+Every task card shows a coloured left strip matching its category colour.
 If the task has no category, the strip is neutral grey.
 This appears in:
 - `AllTasksScreen` (via `TaskItem`)
 - `TodayScreen` (via `TaskItem`)
 - `UsePermanentTaskScreen` template rows (template-level category, if set)
 
-### Data Flow Problem
+### Data Flow
 
-`Task.categoryId` is stored. `Task.categoryColor` is **not** — category colours
-live in the `categories` table. The UI needs the colour at render time without a
-separate query per task.
+`Task.categoryId` is stored. `Task.categoryColor` is **not** stored directly —
+category colours live in the `categories` table. The UI needs the colour at
+render time without a separate query per task.
 
 **Solution: denormalise `categoryColor` onto the Task at load time.**
 
-In `taskStorage.ts → getAllTasks()`, change the SQL to LEFT JOIN categories:
+`taskStorage.ts → getAllTasks()` was updated to LEFT JOIN categories:
 
 ```sql
 SELECT t.*, c.color AS category_color
-FROM tasks t
-LEFT JOIN categories c ON t.category_id = c.id
+FROM   tasks t
+LEFT JOIN categories c ON c.id = t.category_id
 ORDER BY t.created_at DESC
 ```
 
-Then add `categoryColor` to the mapped row:
+`category_color` is NULL when the task has no category or the category has
+no colour set. It is mapped to `task.categoryColor ?? undefined`.
 
-```typescript
-categoryColor: row.category_color ?? undefined,
-```
+`permanentTaskStorage.ts → getAllTemplates()` received the same JOIN so
+template rows in `UsePermanentTaskScreen` also carry the colour.
+`permanentTaskActions.ts → getAllPermanentTemplates()` passes `categoryColor`
+straight through to the returned `Task[]`.
 
-Add `categoryColor?: string` to the `Task` interface in `task.ts`.
+`categoryColor?: string` was added to both the `Task` interface (`task.ts`)
+and the `PermanentTask` interface (`permanentTask.ts`).
 
-The same JOIN is needed in `permanentTaskStorage.ts` for template loads
-(so template rows in `UsePermanentTaskScreen` also get a colour).
+### Actual Layout — Two Left-Edge Strips ✅
 
-### TaskItem Changes
-
-`TaskItem` currently renders:
-
-```
-[ checkbox ] [ title + due date ] [ ✕ delete ]
-```
-
-New layout with colour strip:
+The original plan called for a single category strip. The final implementation
+uses **two adjacent strips** so that Pillars 2 and 3 share the same space
+without competing:
 
 ```
-[ 4px strip ] [ checkbox ] [ title + due date ] [ ✕ delete ]
+┌──────────────────────────────────────────────────┐
+│ ▌▌ [✓] Task title                  [due date] ✕  │
+└──────────────────────────────────────────────────┘
+  ││
+  │└── Category strip  (4 px) — category colour or theme.categoryStripNone
+  └─── Permanent strip (3 px) — theme.accentPermanent or transparent
 ```
 
-The strip is a `View` with:
-```typescript
-{
-  width: 4,
-  alignSelf: 'stretch',
-  backgroundColor: task.categoryColor ?? theme.categoryStripNone,
-  borderTopLeftRadius: 8,
-  borderBottomLeftRadius: 8,
-  marginRight: 12,
-}
-```
+The permanent strip (3 px) sits outermost (flush to card edge) with
+`borderTopLeftRadius: 8` / `borderBottomLeftRadius: 8` matching the card.
+The category strip (4 px) sits immediately to its right with `marginRight: 12`
+to gap-separate from the checkbox.
 
-The outer container `borderRadius: 8` already clips the corners — the strip
-just needs matching `borderTopLeftRadius`/`borderBottomLeftRadius` on itself
-so it curves with the card. No `overflow: 'hidden'` needed.
+`overflow: 'hidden'` is intentionally **not** used on the container — it clips
+drop shadows on iOS. The `borderTopLeftRadius`/`borderBottomLeftRadius` on the
+permanent strip achieves the same visual result without clipping the shadow.
 
-### Template Rows in UsePermanentTaskScreen
+The container was changed from `alignItems: 'center'` to `alignItems: 'stretch'`
+and from `padding: 16` to `paddingRight: 16, paddingVertical: 0` so the strips
+can fill the full card height. Vertical rhythm is restored by `paddingVertical: 16`
+on the checkbox and body inner Views.
 
-`renderTemplateItem` renders a `TouchableOpacity`. Same strip treatment:
+### Template Rows in UsePermanentTaskScreen ✅
+
+`renderTemplateItem` and `makeStyles` were updated with the same two strips:
 
 ```
-[ 4px strip ] [ template name + location + usage count ] [ ⋮ menu ] [ › arrow ]
+[ 3px perm strip | 4px cat strip ] [ template name + location + usage count ] [ ⋮ ] [ › ]
 ```
 
-Strip colour = `item.categoryColor ?? theme.categoryStripNone`.
+All template rows are permanent by definition, so the permanent strip is always
+purple (`theme.accentPermanent`) there. The category strip shows the template's
+assigned category colour, or neutral grey if unassigned.
 
 ---
 

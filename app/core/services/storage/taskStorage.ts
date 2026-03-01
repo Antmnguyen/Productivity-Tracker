@@ -36,27 +36,43 @@ export async function getAllTasks(): Promise<Task[]> {
   // Mirrors getInstanceById() in permanentTaskStorage but batched.
   const instanceMeta = getAllInstanceMetaSync();
 
+  // LEFT JOIN categories so we can denormalise category_color onto each task
+  // in one query instead of N individual lookups at render time.
+  // category_color will be NULL for tasks with no category or when the
+  // referenced category has no colour set.
   const rows = db.getAllSync<{
-    id: string;
-    title: string;
-    completed: number;
-    created_at: number;
-    due_date: number | null;
-    category_id: string | null;
-    completed_at: number | null;
-  }>('SELECT * FROM tasks ORDER BY created_at DESC');
+    id:             string;
+    title:          string;
+    completed:      number;
+    created_at:     number;
+    due_date:       number | null;
+    category_id:    string | null;
+    completed_at:   number | null;
+    category_color: string | null; // aliased from categories.color via LEFT JOIN
+  }>(`
+    SELECT t.*, c.color AS category_color
+    FROM   tasks t
+    LEFT JOIN categories c ON c.id = t.category_id
+    ORDER BY t.created_at DESC
+  `);
 
   return rows.map(row => {
+    // Look up whether this task is a permanent-task instance.
+    // instanceMeta is keyed by task id; presence means the task was spawned
+    // from a permanent template, so we set kind = 'permanent'.
     const perm = instanceMeta.get(row.id);
     return {
-      id:          row.id,
-      title:       row.title,
-      completed:   row.completed === 1,
-      createdAt:   new Date(row.created_at),
-      dueDate:     row.due_date     ? new Date(row.due_date)     : undefined,
-      categoryId:  row.category_id  ?? undefined,
-      completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
-      // Reconstructed via template_instances + templates join
+      id:            row.id,
+      title:         row.title,
+      completed:     row.completed === 1,
+      createdAt:     new Date(row.created_at),
+      dueDate:       row.due_date     ? new Date(row.due_date)     : undefined,
+      categoryId:    row.category_id  ?? undefined,
+      // categoryColor is used by TaskItem to paint the left colour strip.
+      // undefined means "no category" → strip falls back to theme.categoryStripNone.
+      categoryColor: row.category_color ?? undefined,
+      completedAt:   row.completed_at ? new Date(row.completed_at) : undefined,
+      // Reconstruct kind + metadata from the batched template_instances lookup
       kind:     perm ? 'permanent' : undefined,
       metadata: perm ? {
         permanentId:   perm.templateId,

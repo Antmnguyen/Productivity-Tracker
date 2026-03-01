@@ -371,19 +371,22 @@ export async function getAllPermanentTemplates(): Promise<Task[]> {
   const templates = await getAllTemplates();
 
   return templates.map(template => ({
-    id: template.id,
-    title: template.templateTitle,
+    id:        template.id,
+    title:     template.templateTitle,
     completed: false,
     createdAt: new Date(template.createdAt),
-    kind: 'permanent' as const,
+    kind:      'permanent' as const,
     categoryId: template.categoryId,
+    // Pass the denormalised colour through so UsePermanentTaskScreen can
+    // paint the category colour strip without an extra DB round-trip.
+    categoryColor: template.categoryColor,
     location: template.location ? { name: template.location } as any : undefined,
     metadata: {
-      permanentId: template.permanentId,
+      permanentId:   template.permanentId,
       templateTitle: template.templateTitle,
-      isTemplate: template.isTemplate,
+      isTemplate:    template.isTemplate,
       instanceCount: template.instanceCount,
-      autoRepeat: template.autoRepeat,
+      autoRepeat:    template.autoRepeat,
     },
   }));
 }

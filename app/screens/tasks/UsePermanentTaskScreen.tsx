@@ -242,12 +242,49 @@ export const UsePermanentTaskScreen: React.FC<UsePermanentTaskScreenProps> = ({
   const renderTemplateItem = ({ item }: { item: Task }) => {
     const metadata = item.metadata as any;
 
+    // --------------------------------------------------------------------------
+    // Permanent strip colour — all templates are permanent by definition,
+    // so this strip is always purple.  It reinforces that every row in this
+    // list is a reusable template, not a one-off task.
+    // --------------------------------------------------------------------------
+    const permanentStripColor = theme.accentPermanent;
+
+    // --------------------------------------------------------------------------
+    // Category strip colour — use the denormalised colour carried on the Task
+    // object (set by getAllPermanentTemplates via the DB LEFT JOIN).
+    // Falls back to the neutral grey if no category is assigned.
+    // --------------------------------------------------------------------------
+    const categoryStripColor = item.categoryColor ?? theme.categoryStripNone;
+
     return (
+      // Outer row: no paddingLeft so the strips sit flush to the left edge.
+      // paddingRight and paddingVertical keep the original 16 px spacing
+      // on the other three sides.
       <TouchableOpacity
         style={styles.templateItem}
         onPress={() => handleTemplateSelect(item)}
         activeOpacity={0.7}
       >
+
+        {/* ----------------------------------------------------------------
+            PERMANENT INDICATOR STRIP (3 px)
+            Always purple for template rows — all items here are permanent.
+            borderTopLeftRadius / borderBottomLeftRadius match the row's
+            overflow so the strip appears flush with the row's left edge.
+           ---------------------------------------------------------------- */}
+        <View style={[styles.permanentStrip, { backgroundColor: permanentStripColor }]} />
+
+        {/* ----------------------------------------------------------------
+            CATEGORY COLOUR STRIP (4 px)
+            Shows the template's category colour, or neutral grey when no
+            category has been assigned.  marginRight creates the gap between
+            the strips and the template content area.
+           ---------------------------------------------------------------- */}
+        <View style={[styles.categoryStrip, { backgroundColor: categoryStripColor }]} />
+
+        {/* ----------------------------------------------------------------
+            TEMPLATE CONTENT — title, optional location, usage count
+           ---------------------------------------------------------------- */}
         <View style={styles.templateContent}>
           <Text style={styles.templateTitle}>{item.title}</Text>
 
@@ -264,12 +301,15 @@ export const UsePermanentTaskScreen: React.FC<UsePermanentTaskScreenProps> = ({
           )}
         </View>
 
+        {/* ----------------------------------------------------------------
+            CONTEXT MENU BUTTON — Edit or Delete template
+           ---------------------------------------------------------------- */}
         <TouchableOpacity
           onPress={() =>
             Alert.alert(item.title, 'Choose an action', [
-              { text: 'Edit Template', onPress: () => onEditTemplate?.(item) },
+              { text: 'Edit Template',   onPress: () => onEditTemplate?.(item) },
               { text: 'Delete Template', style: 'destructive', onPress: () => handleDeleteTemplate(item) },
-              { text: 'Cancel', style: 'cancel' },
+              { text: 'Cancel',          style: 'cancel' },
             ])
           }
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -559,12 +599,39 @@ function makeStyles(theme: AppTheme) {
     },
 
     templateItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
+      flexDirection:  'row',
+      // 'stretch' allows the strip Views to grow to the full row height
+      // via their own alignSelf: 'stretch'.
+      alignItems:     'stretch',
       backgroundColor: theme.bgCard,
-      paddingVertical: 14,
-      paddingHorizontal: 16,
+      // No paddingLeft — strips sit flush against the left edge of the row.
+      // paddingRight and paddingVertical preserve the original spacing on
+      // the other three sides.
+      paddingVertical:  14,
+      paddingRight:     16,
     },
+
+    // ── Left-edge identity strips ──────────────────────────────────────────
+    // Mirror the same strip pattern used in TaskItem so template rows and
+    // active task cards feel visually consistent.
+
+    permanentStrip: {
+      // 3 px — narrower strip for the permanent/type indicator (always purple
+      // in this screen since every row is a template).
+      width:                  3,
+      alignSelf:              'stretch',
+      // Round only the left corners to follow the list row's implied shape.
+      borderTopLeftRadius:    8,
+      borderBottomLeftRadius: 8,
+    },
+    categoryStrip: {
+      // 4 px — slightly wider so category colour is the dominant signal.
+      width:       4,
+      alignSelf:   'stretch',
+      // Gap between the strips and the template text content.
+      marginRight: 12,
+    },
+
     templateContent: {
       flex: 1,
     },
