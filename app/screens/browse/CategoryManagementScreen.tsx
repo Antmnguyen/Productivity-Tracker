@@ -140,7 +140,7 @@ export const CategoryManagementScreen: React.FC<CategoryManagementScreenProps> =
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <Screen edges={['top']} style={styles.container}>
+    <Screen edges={['top']} topColor="#5856D6" style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>

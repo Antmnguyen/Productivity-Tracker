@@ -155,7 +155,7 @@ export const BrowseScreen: React.FC = () => {
   // Main list
   // ---------------------------------------------------------------------------
   return (
-    <Screen edges={['top']} style={styles.container}>
+    <Screen edges={['top']} topColor="#5856D6" style={styles.container}>
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <View style={styles.header}>

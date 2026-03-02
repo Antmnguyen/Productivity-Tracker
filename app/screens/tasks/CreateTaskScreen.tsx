@@ -138,7 +138,7 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
   };
 
   return (
-    <Screen edges={['top', 'bottom']} style={styles.container}>
+    <Screen edges={['top', 'bottom']} topColor={theme.bgCard} style={styles.container}>
 
       {/* HEADER BAR */}
       <View style={styles.header}>

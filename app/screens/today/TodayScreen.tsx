@@ -103,7 +103,7 @@ export const TodayScreen: React.FC = () => {
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <Screen edges={['top']} style={[styles.container, { backgroundColor: theme.bgScreen }]}>
+    <Screen edges={['top']} topColor={ACCENT} style={[styles.container, { backgroundColor: theme.bgScreen }]}>
 
       {/* Header */}
       <View style={styles.header}>

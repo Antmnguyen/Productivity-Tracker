@@ -126,7 +126,7 @@ export const CreatePermanentTaskScreen: React.FC<CreatePermanentTaskScreenProps>
   };
 
   return (
-    <Screen edges={['top', 'bottom']} style={styles.container}>
+    <Screen edges={['top', 'bottom']} topColor={theme.bgCard} style={styles.container}>
 
       {/* HEADER BAR */}
       <View style={styles.header}>

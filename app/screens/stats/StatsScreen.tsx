@@ -306,7 +306,7 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ onStatCardPress }) => 
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <Screen edges={['top']} style={styles.container}>
+    <Screen edges={['top']} topColor="#FF9500" style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Stats</Text>

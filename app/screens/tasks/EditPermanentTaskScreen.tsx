@@ -138,7 +138,7 @@ export const EditPermanentTaskScreen: React.FC<EditPermanentTaskScreenProps> = (
   };
 
   return (
-    <Screen edges={['top', 'bottom']} style={styles.container}>
+    <Screen edges={['top', 'bottom']} topColor={theme.bgCard} style={styles.container}>
 
       {/* HEADER */}
       <View style={styles.header}>

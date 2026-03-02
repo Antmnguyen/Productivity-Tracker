@@ -156,7 +156,7 @@ export const HistoryManagementScreen: React.FC<HistoryManagementScreenProps> = (
   );
 
   return (
-    <Screen edges={['top']} style={styles.container}>
+    <Screen edges={['top']} topColor="#5856D6" style={styles.container}>
 
       {/* -----------------------------------------------------------------------
           HEADER

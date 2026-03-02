@@ -45,7 +45,7 @@ export interface TempScreenProps {
 
 export const HealthManagementScreen: React.FC<TempScreenProps> = ({ onBack }) => {
   return (
-    <Screen edges={['top']} style={styles.container}>
+    <Screen edges={['top']} topColor="#5856D6" style={styles.container}>
       {/* -----------------------------------------------------------------------
           HEADER
          ----------------------------------------------------------------------- */}

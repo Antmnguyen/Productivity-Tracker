@@ -107,7 +107,7 @@ export const AllTasksScreen: React.FC = () => {
   // ---------------------------------------------------------------------------
   return (
     // SafeAreaView ensures content doesn't overlap the phone's notch or home bar
-    <Screen edges={['top']} style={[styles.container, { backgroundColor: theme.bgScreen }]}>
+    <Screen edges={['top']} topColor="#007AFF" style={[styles.container, { backgroundColor: theme.bgScreen }]}>
 
       {/* ===================================================================
           HEADER BANNER
