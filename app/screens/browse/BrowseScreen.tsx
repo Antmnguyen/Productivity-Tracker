@@ -163,27 +163,27 @@ export const BrowseScreen: React.FC = () => {
         <Text style={styles.subtitle}>Manage your app features</Text>
       </View>
 
-      {/* ── Dark Mode toggle row ─────────────────────────────────────────── */}
-      <View style={styles.darkModeRow}>
-        <View style={styles.darkModeIconBadge}>
-          <Text style={styles.iconText}>🌙</Text>
-        </View>
-        <View style={styles.featureInfo}>
-          <Text style={styles.featureTitle}>Dark Mode</Text>
-          <Text style={styles.featureDesc}>{isDark ? 'On' : 'Off'}</Text>
-        </View>
-        <Switch
-          value={isDark}
-          onValueChange={toggleTheme}
-          trackColor={{ false: theme.border, true: theme.accent }}
-          thumbColor="#fff"
-        />
-      </View>
-
       {/* ── Feature card list ──────────────────────────────────────────────── */}
       <FlatList
         data={FEATURES}
         keyExtractor={(item) => item.key}
+        ListHeaderComponent={
+          <View style={styles.darkModeRow}>
+            <View style={styles.darkModeIconBadge}>
+              <Text style={styles.iconText}>🌙</Text>
+            </View>
+            <View style={styles.featureInfo}>
+              <Text style={styles.featureTitle}>Dark Mode</Text>
+              <Text style={styles.featureDesc}>{isDark ? 'On' : 'Off'}</Text>
+            </View>
+            <Switch
+              value={isDark}
+              onValueChange={toggleTheme}
+              trackColor={{ false: theme.border, true: theme.accent }}
+              thumbColor="#fff"
+            />
+          </View>
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.featureRow}
