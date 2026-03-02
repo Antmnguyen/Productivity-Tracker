@@ -6,17 +6,23 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:web": "npx expo export --platform web && node scripts/inject-pwa-links.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-community/datetimepicker": "8.4.4",
+    "@types/sql.js": "^1.4.9",
+    "dexie": "^4.3.0",
     "expo": "~54.0.30",
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-native": "0.81.5",
-    "react-native-safe-area-context": "~5.6.0"
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-web": "^0.21.0",
+    "sql.js": "^1.14.0"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",

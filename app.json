@@ -25,11 +25,21 @@
       "package": "com.anonymous.TaskTrackerApp"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single",
+      "name": "Productivity Tracker",
+      "shortName": "Tracker",
+      "description": "Task tracker with permanent tasks, stats, and categories.",
+      "themeColor": "#007AFF",
+      "backgroundColor": "#ffffff",
+      "display": "standalone",
+      "orientation": "portrait",
+      "lang": "en",
+      "startUrl": "/"
     },
     "plugins": [
-      "expo-sqlite",
-      "@react-native-community/datetimepicker"
+      "expo-sqlite"
     ],
     "extra": {
       "eas": {

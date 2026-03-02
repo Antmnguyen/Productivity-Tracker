@@ -120,6 +120,26 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
     }
   };
 
+  // Web-only: called when the <input type="date"> value changes.
+  // value is always 'YYYY-MM-DD' from the browser date picker.
+  const handleWebDateChange = (val: string) => {
+    if (!val || !/^\d{4}-\d{2}-\d{2}$/.test(val)) return;
+    const [y, m, d] = val.split('-').map(Number);
+    const date = new Date(y, m - 1, d, 23, 59, 59, 999);
+    if (!isNaN(date.getTime())) {
+      setDueDate(date);
+      setSelectedQuickOption('custom');
+    }
+  };
+
+  // Helper: local 'YYYY-MM-DD' string for the web date input value.
+  const localDateString = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   const handleSave = () => {
     if (!title.trim()) {
       Alert.alert('Required', 'Please enter a task name.');
@@ -246,6 +266,16 @@ export const CreateTaskScreen: React.FC<CreateTaskScreenProps> = ({
               display="default"
               onChange={handleDateChange}
               minimumDate={new Date()}
+            />
+          )}
+
+          {/* Web: native browser date picker via <input type="date"> */}
+          {Platform.OS === 'web' && showDatePicker && (
+            <TextInput
+              style={styles.webDateInput}
+              value={localDateString(dueDate)}
+              onChangeText={handleWebDateChange}
+              {...({ type: 'date', min: localDateString(new Date()) } as any)}
             />
           )}
         </View>
@@ -382,6 +412,18 @@ function makeStyles(theme: AppTheme) {
     iosDatePicker: {
       height: 150,
       marginTop: 8,
+    },
+
+    webDateInput: {
+      marginTop: 8,
+      fontSize: 16,
+      color: theme.textPrimary,
+      backgroundColor: theme.bgInput,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: theme.border,
     },
 
     bottomSpacer: {

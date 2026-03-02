@@ -23,6 +23,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   SafeAreaView,
   FlatList,
@@ -167,6 +168,24 @@ export const UsePermanentTaskScreen: React.FC<UsePermanentTaskScreenProps> = ({
 
     if (event.type === 'set' && selectedDate) {
       setDueDate(selectedDate);
+      setSelectedQuickOption('custom');
+    }
+  };
+
+  // Web-only helpers
+  const localDateString = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const handleWebDateChange = (val: string) => {
+    if (!val || !/^\d{4}-\d{2}-\d{2}$/.test(val)) return;
+    const [y, m, d] = val.split('-').map(Number);
+    const date = new Date(y, m - 1, d, 23, 59, 59, 999);
+    if (!isNaN(date.getTime())) {
+      setDueDate(date);
       setSelectedQuickOption('custom');
     }
   };
@@ -493,6 +512,16 @@ export const UsePermanentTaskScreen: React.FC<UsePermanentTaskScreenProps> = ({
                 />
               )}
 
+              {/* Web: native browser date picker */}
+              {Platform.OS === 'web' && showDatePicker && (
+                <TextInput
+                  style={styles.webDateInput}
+                  value={localDateString(dueDate)}
+                  onChangeText={handleWebDateChange}
+                  {...({ type: 'date', min: localDateString(new Date()) } as any)}
+                />
+              )}
+
               <Text style={styles.helperText}>
                 When should this task be completed?
               </Text>
@@ -764,6 +793,17 @@ function makeStyles(theme: AppTheme) {
     iosDatePicker: {
       height: 150,
       marginBottom: 8,
+    },
+    webDateInput: {
+      marginTop: 8,
+      fontSize: 16,
+      color: theme.textPrimary,
+      backgroundColor: theme.bgInput,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: theme.border,
     },
     helperText: {
       fontSize: 13,

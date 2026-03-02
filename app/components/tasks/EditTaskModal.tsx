@@ -102,6 +102,21 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
     }
   };
 
+  // Web-only helpers
+  const localDateString = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const handleWebDateChange = (val: string) => {
+    if (!val || !/^\d{4}-\d{2}-\d{2}$/.test(val)) return;
+    const [y, m, d] = val.split('-').map(Number);
+    const date = new Date(y, m - 1, d, 23, 59, 59, 999);
+    if (!isNaN(date.getTime())) setDueDate(date);
+  };
+
   const formatDate = (date: Date): string => {
     const today = new Date();
     const tomorrow = new Date(today);
@@ -183,8 +198,8 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Date Picker (shown inline on iOS, modal on Android) */}
-          {showDatePicker && (
+          {/* Date Picker (shown inline on iOS, modal on Android, native input on web) */}
+          {showDatePicker && Platform.OS !== 'web' && (
             <View style={styles.datePickerContainer}>
               <DateTimePicker
                 value={dueDate}
@@ -201,6 +216,24 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
                   <Text style={styles.datePickerDoneText}>Done</Text>
                 </TouchableOpacity>
               )}
+            </View>
+          )}
+
+          {/* Web: native browser date picker */}
+          {showDatePicker && Platform.OS === 'web' && (
+            <View style={styles.datePickerContainer}>
+              <TextInput
+                style={styles.webDateInput}
+                value={localDateString(dueDate)}
+                onChangeText={handleWebDateChange}
+                {...({ type: 'date', min: localDateString(new Date()) } as any)}
+              />
+              <TouchableOpacity
+                style={styles.datePickerDone}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={styles.datePickerDoneText}>Done</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -292,6 +325,16 @@ function makeStyles(theme: AppTheme) {
     datePickerContainer: {
       paddingHorizontal: 20,
       paddingBottom: 12,
+    },
+    webDateInput: {
+      fontSize: 16,
+      color: theme.textPrimary,
+      borderWidth: 1,
+      borderColor: theme.border,
+      borderRadius: 8,
+      padding: 12,
+      backgroundColor: theme.bgInput,
+      marginBottom: 8,
     },
     datePickerDone: {
       alignSelf: 'flex-end',
