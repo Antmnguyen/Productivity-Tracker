@@ -24,7 +24,8 @@
 //
 // SORT LOGIC
 // ----------
-// Uses sortTasksByCompletion() — uncompleted tasks first, completed last.
+// Uses sortTasksByCompletionAndCategory() — incomplete first, complete last;
+// within each group, same-category tasks are adjacent.
 //
 // =============================================================================
 
@@ -50,7 +51,7 @@ import {
   filterTasksDueThisWeek,
   filterTasksDueThisMonth,
 } from '../../core/utils/taskFilters';
-import { sortTasksByCompletion } from '../../core/utils/taskSorting';
+import { sortTasksByCompletionAndCategory } from '../../core/utils/taskSorting';
 import { Task } from '../../core/types/task';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -139,7 +140,7 @@ export const TodayScreen: React.FC = () => {
     }
   }, [tasks, activeFilter, referenceDate]);
 
-  const sortedTasks  = useMemo(() => sortTasksByCompletion(filteredTasks), [filteredTasks]);
+  const sortedTasks  = useMemo(() => sortTasksByCompletionAndCategory(filteredTasks), [filteredTasks]);
   const activeCount  = filteredTasks.filter(t => !t.completed).length;
 
   // ── Handlers ────────────────────────────────────────────────────────────────
