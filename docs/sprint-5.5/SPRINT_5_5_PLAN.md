@@ -1,115 +1,60 @@
-# Sprint 5.5 — Web Deployment (iPhone Access via Browser)
+# Sprint 5.5 — Bug Fixes & Usability
 
-**Goal:** Deploy the app as a web app so iPhone users can use it in Safari.
-Android users get the native app. iPhone users get a web version with full
-core functionality. Geofencing (Sprint 6) and Health Connect (Sprint 7) are
-Android native features only — they simply won't appear on the web version.
+**Goal:** Resolve known bugs and usability gaps surfaced after Sprint 5 delivery.
 
----
-
-## Context
-
-The app is built with Expo + React Native. Expo has built-in web support
-(React Native Web). This means most of the UI already works in a browser
-with minimal changes. The main blockers are a few native-only libraries.
-
-Deploy to **Vercel** — simplest pipeline with Expo, free tier is sufficient.
-iPhone users open the URL in Safari and optionally add it to their home screen
-as a PWA (no App Store required).
+**Status key:**
+- `[ ]` Not started
+- `[~]` In progress
+- `[x]` Done
+- `[!]` Blocked
 
 ---
 
-## Biggest Blocker: expo-sqlite Does Not Work in Browser
+## Small Fixes
 
-The entire storage layer uses `expo-sqlite` which is native-only (no browser).
+_Fast, low-risk corrections. Target: all completed before Medium work begins._
 
-**Solution — Dual storage adapter:**
-
-Create a thin `StorageAdapter` interface. Swap implementations at runtime based
-on `Platform.OS`.
-
-```
-app/core/services/storage/
-  adapter.ts          ← interface + platform selector
-  adapters/
-    sqliteAdapter.ts  ← wraps current expo-sqlite (mobile)
-    indexedDBAdapter.ts ← browser storage using 'idb' or 'dexie.js'
-```
-
-All storage files (`taskStorage`, `permanentTaskStorage`, etc.) import from
-`adapter.ts` instead of calling `expo-sqlite` directly. No changes to the
-storage query logic — only the DB driver swaps.
-
-```ts
-// adapter.ts
-import { Platform } from 'react-native';
-export const db = Platform.OS === 'web'
-  ? new IndexedDBAdapter()
-  : new SQLiteAdapter();
-```
-
-Data is stored locally in the browser (IndexedDB) — no server/cloud needed.
-Each device has its own data. This is the same model as the native app.
+| # | Task | Status |
+|---|------|--------|
+| S1 | Very slightly reduce the history bar tab height at the top so it fits better | `[x]` |
+| S2 | Repeat task — initial creation of a permanent task does not properly save the repeatability status on creation (editing saves fine, only creation is broken) | `[ ]` |
+| S3 | "Use permanent task" is being double-counted on creation and completion — remove the creation increment so it only increments upon completion (this is separate from the main stats counter, likely in perm task actions) | `[ ]` |
+| S4 | Stats screen — white circle text on percent value glitches visually | `[ ]` |
+| S5 | Month view — completion fill should be continuous, not rounded to 4 discrete states (0, 1/4, 2/4, 3/4, 4/4). Keep the shape exactly the same, only change the fill logic to be continuous | `[ ]` |
 
 ---
 
-## Other Compatibility Issues
+## Medium Fixes
 
-| Issue | Fix |
-|-------|-----|
-| `@react-native-community/datetimepicker` — no web support | Wrap in `Platform.OS !== 'web'` guard, show a plain `<input type="date">` on web |
-| Geofencing (Sprint 6) | `Platform.OS !== 'web'` guard — feature hidden on web |
-| Health Connect (Sprint 7) | `Platform.OS !== 'web'` guard — feature hidden on web |
-| `expo-haptics` | Auto no-ops on web, no change needed |
-| `SafeAreaView` | Works on web as a plain view |
-| Navigation (MainNavigator overlay pattern) | Works on web unchanged |
+_Meaningful features or multi-part bugs. Each should be scoped and tracked individually._
 
----
-
-## PWA Setup (Add to iPhone Home Screen)
-
-Add a `public/manifest.json` and meta tags so Safari treats it as a PWA:
-- App name, icon, theme colour
-- `display: standalone` — hides browser chrome when opened from home screen
-- Splash screen
-
-This makes the web version feel like a native app on iPhone — no browser bar,
-full screen, app icon on the home screen.
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| M1 | Week completions (category, tasks, weekly average) — data is not retrieved correctly when scrolling left/right; only the current week displays properly. Data exists (other stats access it fine) and processing is correct (current week is accurate) | `[ ]` | |
+| M2 | Undoing a permanent task in the visual scene does not revert the stats collection for that task — undo must properly revert the recorded values | `[ ]` | |
+| M3 | Today tab — add a fourth button alongside "Today / This Week / This Month" labelled "Choose Date". Selecting a date toggles it as the active reference date; Today/This Week/This Month then display relative to the chosen date. Default reference date is the current date. Reuse the existing date-picker used for task assignment | `[x]` | | Implement a similar date selection feature for history screen with the same logic displaying history of selected dates `[x]`
+| M4 | Task lists and permanent tasks — sort/group by category so same-category items are adjacent. Secondary sort: completion status still takes priority (incomplete on top, complete on bottom); within each completion group, items are sorted by category. Use Permanent Tasks screen should follow the same scheme | `[ ]` | |
+| M5 | Task deletion — replace current delete interaction with a toggle-based flow to prevent accidental deletes: toggle on → select tasks → confirm delete. Toggle/button placement: corner button or part of the floating create-task button, whichever looks best | `[ ]` | |
+| M6 | Edit task functionality for permanent tasks on the main screen — extend editing to include toggling and editing the repeatability of the task. Also consider expanding edit to allow changing categories for both temporary and permanent tasks | `[ ]` | |
 
 ---
 
-## Deployment Pipeline (Vercel)
+## Large Fixes
 
-1. `npx expo export --platform web` → generates `dist/` folder
-2. Connect GitHub repo to Vercel
-3. Build command: `npx expo export --platform web`
-4. Output directory: `dist`
-5. Every push to `main` auto-deploys
+_Complex, higher-risk work. Requires focused investigation before implementation._
 
----
-
-## Task List
-
-- [ ] Run `npx expo export --platform web` — document all errors
-- [ ] Build `StorageAdapter` interface + `IndexedDBAdapter` (using `dexie.js`)
-- [ ] Refactor all storage files to use `db` from `adapter.ts` not expo-sqlite directly
-- [ ] Fix `datetimepicker` — web fallback to native `<input type="date">`
-- [ ] Add `Platform.OS !== 'web'` guards for geofencing + Health Connect entry points in BrowseScreen
-- [ ] Test all screens in browser (`npx expo start --web`)
-- [ ] Add PWA manifest + icons
-- [ ] Set up Vercel project, connect GitHub
-- [ ] Test on iPhone Safari — verify "Add to Home Screen" works
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| L1 | Streaks — not being calculated correctly | `[ ]` | Investigate root cause before touching logic |
+| L2 | Repeatable tasks — broken in multiple places across the app | `[ ]` | Audit all repeat-task code paths first |
 
 ---
 
-## What the Web Version Does NOT Have
+## Progress Tracking
 
-| Feature | Reason |
-|---------|--------|
-| Geofencing auto-complete | Android/iOS native APIs only |
-| Health Connect sync | Android only |
-| Push notifications | Out of scope |
-| Cross-device data sync | Data is local (IndexedDB) per browser |
+**Small:** 0 / 5 done
+**Medium:** 0 / 6 done
+**Large:** 0 / 2 done
+**Total:** 0 / 13 done
 
-These are not bugs — they are Android native features. The web version covers
-all core task tracking, stats, browse, and permanent task management.
+Update the table statuses and the counts above as work completes. Move items to `[~]` when actively in progress and `[x]` when merged/verified.
