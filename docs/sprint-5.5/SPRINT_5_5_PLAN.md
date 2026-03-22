@@ -19,8 +19,9 @@ _Fast, low-risk corrections. Target: all completed before Medium work begins._
 | S1 | Very slightly reduce the history bar tab height at the top so it fits better | `[x]` |
 | S2 | Repeat task — initial creation of a permanent task does not properly save the repeatability status on creation (editing saves fine, only creation is broken) | `[x]` |
 | S3 | "Use permanent task" is being double-counted on creation and completion — remove the creation increment so it only increments upon completion (this is separate from the main stats counter, likely in perm task actions) | `[x]` |
-| S4 | Stats screen — white circle text on percent value glitches visually | `[]` |
+| S4 | Stats screen — white circle text on percent value glitches visually (hardcoded white inner disc + white text shadow artifact) | `[x]` |
 | S5 | Month view — completion fill should be continuous, not rounded to 4 discrete states (0, 1/4, 2/4, 3/4, 4/4). Keep the shape exactly the same, only change the fill logic to be continuous | `[x]` |
+| S6 | Permanent Tasks / Categories collapsible sections clip content when list grows long — `MAX_CONTENT_HEIGHT` cap was too small | `[x]` |
 
 ---
 
@@ -30,10 +31,10 @@ _Meaningful features or multi-part bugs. Each should be scoped and tracked indiv
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| M1 | Week completions (category, tasks, weekly average) — data is not retrieved correctly when scrolling left/right; only the current week displays properly. Data exists (other stats access it fine) and processing is correct (current week is accurate) | `[ ]` | |
-| M2 | Undoing a permanent task in the visual scene does not revert the stats collection for that task — undo must properly revert the recorded values | `[ ]` | |
+| M1 | Week completions (category, tasks, weekly average) — data is not retrieved correctly when scrolling left/right; only the current week displays properly. Data exists (other stats access it fine) and processing is correct (current week is accurate) | `[x]` | |
+| M2 | Undoing a permanent task in the visual scene does not revert the stats collection for that task — undo must properly revert the recorded values | `[x]` | |
 | M3 | Today tab — add a fourth button alongside "Today / This Week / This Month" labelled "Choose Date". Selecting a date toggles it as the active reference date; Today/This Week/This Month then display relative to the chosen date. Default reference date is the current date. Reuse the existing date-picker used for task assignment | `[x]` | | Implement a similar date selection feature for history screen with the same logic displaying history of selected dates `[x]`
-| M4 | Task lists and permanent tasks — sort/group by category so same-category items are adjacent. Secondary sort: completion status still takes priority (incomplete on top, complete on bottom); within each completion group, items are sorted by category. Use Permanent Tasks screen should follow the same scheme | `[]` | |
+| M4 | Task lists and permanent tasks — sort/group by category so same-category items are adjacent. Secondary sort: completion status still takes priority (incomplete on top, complete on bottom); within each completion group, items are sorted by category. Use Permanent Tasks screen should follow the same scheme | `[x]` | 
 
 ## Medium large
 | M5 | Task deletion — replace current delete interaction with a toggle-based flow to prevent accidental deletes: toggle on → select tasks → confirm delete. Toggle/button placement: corner button or part of the floating create-task button, whichever looks best | `[ ]` | |
@@ -54,9 +55,35 @@ _Complex, higher-risk work. Requires focused investigation before implementation
 
 ## Progress Tracking
 
-**Small:** 0 / 5 done
-**Medium:** 0 / 6 done
+**Small:** 5 / 6 done  (S1 S2 S3 S4 S5 S6 — only S4/S6 remained, both done this session)
+**Medium:** 4 / 6 done  (M1 M2 M3 M4 done — M5 M6 pending)
 **Large:** 0 / 2 done
-**Total:** 0 / 13 done
+**Total:** 9 / 14 done
 
 Update the table statuses and the counts above as work completes. Move items to `[~]` when actively in progress and `[x]` when merged/verified.
+
+---
+
+## Session Notes — 2026-03-22
+
+### Fixes completed this session
+
+**M1 — Week bar graph showing zeros for past weeks**
+Root cause: `buildWeekBars`, `buildWeekBarsSimple`, and `buildCategoryWeekData` in `useStats.ts` all hardcoded `startOfCurrentWeek()` as the anchor when mapping the 7 day slots. The storage queries correctly fetched past-week rows, but the builders looked up `Mar 23`, `Mar 24`… instead of the actual past-week dates — every lookup missed, returning all zeros. Fixed by adding an optional `weekStart?: string` parameter to all three builders (defaulting to current week for existing callers) and passing `start` from `getWeekBarData`, `getWeekBarDataSimple`, and `getCategoryWeekBarData`.
+- Files: `app/core/hooks/useStats.ts`
+
+**M2 — Undoing a permanent task did not revert stats**
+`uncompleteTask` in `taskActions.ts` only cleared the `tasks` table row — it never removed the `completion_log` entry written by `logCompletion`, and for permanent tasks it never rolled back the `template_stats`/`templates` counters incremented by `updateTemplateStats`. Added `deleteLatestCompletion(taskId)` to `statsStorage.ts` (deletes the most-recent `outcome='completed'` row for the task) and `revertTemplateStats(templateId)` to `permanentTaskStorage.ts` (decrements `completionCount`, `instanceCount`, `currentStreak`; recalculates `completionRate`; leaves `maxStreak` intact as historical high-water). Both are now called from `uncompleteTask`.
+- Files: `app/core/services/storage/statsStorage.ts`, `app/core/services/storage/permanentTaskStorage.ts`, `app/core/domain/taskActions.ts`
+
+**M4 — Task lists not grouped by category**
+Added `sortTasksByCompletionAndCategory` to `taskSorting.ts`: primary sort by completion status (incomplete first), secondary sort by `categoryId` string so same-category tasks are adjacent within each group (no-category tasks sort last using `'\uffff'` sentinel). Replaced `sortTasksByCompletion` with the new function in `AllTasksScreen`, `TodayScreen`, and `UsePermanentTaskScreen`.
+- Files: `app/core/utils/taskSorting.ts`, `app/screens/tasks/AllTasksScreen.tsx`, `app/screens/today/TodayScreen.tsx`, `app/screens/tasks/UsePermanentTaskScreen.tsx`
+
+**S4 — CircularProgress white disc / white shadow on percent text**
+Two issues in `CircularProgress.tsx`: (1) inner disc `backgroundColor` was hardcoded `#ffffff`, rendering as a glaring white circle in dark mode instead of matching the card background — fixed by using `theme.bgCard`. (2) percent label had a white "shadow" artifact from Android's font renderer blending against the View background — suppressed with `textShadowColor: 'transparent'`, `textShadowRadius: 0`, and `backgroundColor: 'transparent'` on the `Text`. Text color also moved from hardcoded `#1a1a1a` to `theme.textPrimary`.
+- Files: `app/components/stats/CircularProgress.tsx`
+
+**S6 — Collapsible sections clipping long lists**
+`MAX_CONTENT_HEIGHT = 2000` in `StatsScreen.tsx` was too small for users with many permanent tasks or categories. Raised to `9999` — content naturally stops at its real height so nothing is clipped regardless of list size.
+- Files: `app/screens/stats/StatsScreen.tsx`
