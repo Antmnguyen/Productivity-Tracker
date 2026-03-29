@@ -33,20 +33,40 @@ npm install react-native-health-connect
 npm install react-native-background-fetch
 ```
 
-### Step 2 — Rebuild the native Android app
+### Step 2 — Connect a physical Android device
+
+Health Connect does not work in the emulator. You need a real device.
+
+1. On your Android phone go to **Settings → About phone** and tap **Build number**
+   seven times to enable Developer Options.
+2. Go to **Settings → Developer Options** and turn on **USB Debugging**.
+3. Plug the phone into your PC with a USB cable.
+4. A prompt will appear on the phone asking to allow USB debugging — tap **Allow**.
+5. Verify the device is visible:
+   ```
+   adb devices
+   ```
+   You should see your device listed with the status `device`. If it shows
+   `unauthorized`, re-check the phone for the allow prompt.
+
+> `adb` is part of Android SDK Platform Tools. If the command is not found,
+> install it via Android Studio → SDK Manager → SDK Tools → Android SDK
+> Platform-Tools, or add its path to your system PATH.
+
+### Step 3 — Rebuild the native Android app
 
 Installing native modules changes the native layer. A JS-only reload is not
-enough — you must do a full native rebuild:
+enough — you must do a full native rebuild. Use `npx expo` (not `expo` directly):
 
 ```bash
-expo run:android
+npx expo run:android
 ```
 
 > If the build fails after installing `react-native-health-connect`, check the
 > library's README for any `build.gradle` or `settings.gradle` changes required
 > for the installed version.
 
-### Step 3 — Add permissions to `android/app/src/main/AndroidManifest.xml`
+### Step 4 — Add permissions to `android/app/src/main/AndroidManifest.xml`
 
 Inside `<manifest>`, add the Health Connect read permissions:
 
@@ -78,7 +98,7 @@ permissions rationale screen (required by the library):
 Also add the WorkManager service declaration for Android 14+ battery exemption
 (see §12 for the full block).
 
-### Step 4 — Verify Health Connect is available on your test device
+### Step 5 — Verify Health Connect is available on your test device
 
 | Android version | What to do |
 |----------------|------------|
@@ -86,10 +106,7 @@ Also add the WorkManager service declaration for Android 14+ battery exemption
 | Android 9–13 | Install **Health Connect** from the Google Play Store |
 | Android < 9 | Not supported — feature will be hidden automatically |
 
-Health Connect does **not** work in the Android emulator. You need a physical
-Android device for all testing.
-
-### Step 5 — Install a fitness app and grant permissions
+### Step 6 — Install a fitness app and grant permissions
 
 Health Connect is only useful if another app is writing data to it.
 
@@ -101,7 +118,7 @@ Health Connect is only useful if another app is writing data to it.
 4. You can also verify permissions inside the Health Connect app itself
    (Settings → Apps → Health Connect → App permissions).
 
-### Step 6 — Verify the SDK exercise type values
+### Step 7 — Verify the SDK exercise type values
 
 `react-native-health-connect` exports exercise type constants but the exact form
 (integer vs lowercase string) may vary by version. Before building the exercise
