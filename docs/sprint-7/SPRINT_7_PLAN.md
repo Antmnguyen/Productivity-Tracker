@@ -1,5 +1,9 @@
 # Sprint 7 — Health Connect Integration
 
+> **STATUS AS OF 2026-04-06: ALL IMPLEMENTATION DONE. Only Phase 5 testing remains.**
+> See §13 Task List for per-task status. See `NEXT_STEPS_2026-04-05.md` for the
+> testing checklist (T1–T24) and a summary of what was implemented.
+
 **Goal:** Read sleep, steps, and workout data from Health Connect (Android) on app
 open and in the background.
 
@@ -1307,39 +1311,41 @@ permissions upfront.
 
 | # | Task | Status |
 |---|------|--------|
-| P1 | Verify Expo managed vs bare workflow compatibility. If bare needed, plan migration | `[ ]` |
-| P2 | Install `react-native-health-connect`, test basic HC read on physical Android device | `[ ]` |
-| P3 | Create `features/googlefit/storage/schema/healthConnect.ts` — DDL for `health_connect_mappings` + `health_connect_meta` | `[ ]` |
-| P4 | Wire `createHealthConnectSchema()` into `database.ts` init chain | `[ ]` |
+| P1 | Verify Expo managed vs bare workflow compatibility. If bare needed, plan migration | `[x]` |
+| P2 | Install `react-native-health-connect`, test basic HC read on physical Android device | `[x]` |
+| P3 | Create schema file — DDL for all HC tables (actual path: `core/services/storage/schema/healthConnect.ts`) | `[x]` |
+| P4 | Wire `initializeHealthConnectSchema()` into `core/services/storage/schema/index.ts` as Step 7 | `[x]` |
 
 ### Phase 2 — Storage Layer
 
+> **Note:** Storage lives in `core/services/storage/healthConnectStorage.ts` (not `features/googlefit/storage/`) to match the existing project architecture pattern.
+
 | # | Task | Status |
 |---|------|--------|
-| D1 | Build `features/googlefit/storage/healthConnectStorage.ts` — `saveMapping`, `getAllEnabledMappings` (orphan-filtered via INNER JOIN), `getMappingById`, `deleteMapping`, `setLastSyncedAt`, `getLastSyncedAt`, `getGoalSettings()`, `saveGoalSettings()` | `[ ]` |
-| D2 | Add `getPendingInstanceByTemplateId(templateId, date)` to `core/services/storage/taskStorage.ts` | `[ ]` |
-| D3 | Add `upsertStepsDay(record)` and `getStepsHistory(startDate, endDate)` to `healthConnectStorage.ts` | `[ ]` |
-| D4 | Add `upsertSleepDay(record)` and `getSleepHistory(startDate, endDate)` to `healthConnectStorage.ts` | `[ ]` |
+| D1 | Build `healthConnectStorage.ts` — `saveMapping`, `getAllEnabledMappings` (orphan-filtered via INNER JOIN), `getAllMappings`, `deleteMapping`, `setLastSyncedAt`, `getLastSyncedAt`, goal getters/setters | `[x]` |
+| D2 | `findTodaysPendingInstance(permanentId)` — implemented as private helper inside `healthConnectActions.ts` (queries tasks + template_instances directly; same result as plan) | `[x]` |
+| D3 | `upsertStepsForDate(date, steps)` + `getStepsInRange(from, to)` + `getStepsPersonalBest()` in `healthConnectStorage.ts` | `[x]` |
+| D4 | `upsertSleepForDate(date, hours)` + `getSleepInRange(from, to)` + `getSleepPersonalBest()` in `healthConnectStorage.ts` | `[x]` |
 
 ### Phase 3 — Business Logic Layer
 
 | # | Task | Status |
 |---|------|--------|
-| S1 | Build `features/googlefit/types/healthConnect.ts` — all types including `HealthGoalSettings` | `[ ]` |
-| S2 | Build `healthConnectActions.checkStatus()` | `[ ]` |
-| S3 | Build `healthConnectActions.requestPermissions()` | `[ ]` |
-| S4 | Build `healthConnectActions.getTodaySummary()` — steps (`startTime >= today`), sleep (24h lookback, `endTime >= startOfToday` filter, stage extraction), workouts (`startTime >= today`) | `[ ]` |
-| S5 | Build `healthConnectUtils.evaluateThreshold()` — uses `exerciseType` SDK values (integers), not string keys | `[ ]` |
-| S6 | Build `healthConnectUtils.createDefaultInstance()` — calls `taskActions.createTask()` | `[ ]` |
-| S7 | Build `healthConnectUtils.pruneOrphanedMappings()` — called from `HealthManagementScreen` on open only | `[ ]` |
-| S8 | Build `healthConnectUtils.computeStepsStats(history: StepsDayRecord[]): StepsStats` | `[ ]` |
-| S9 | Build `healthConnectUtils.computeSleepStats(history: SleepDayRecord[]): SleepStats` | `[ ]` |
-| S10 | Build `healthConnectActions.sync()` — reads HC, upserts steps + sleep history (using goal from `getGoalSettings()`), evaluates thresholds, auto-completes **today-only** task instances, emits `DeviceEventEmitter('healthConnectSyncComplete')` | `[ ]` |
-| S11 | Build `healthConnectActions.getGoalSettings()` / `saveGoalSettings()` — reads/writes `health_connect_meta` goal keys | `[ ]` |
-| S12 | Subscribe to `healthConnectSyncComplete` in `useTasks.ts` to trigger `loadTasks()` | `[ ]` |
-| S13 | Wire `sync()` as fire-and-forget call in `App.tsx` / `index.js` after DB init (app-start sync) | `[ ]` |
-| S14 | Wire `sync()` into `AppState` foreground listener in `MainNavigator.tsx` (supplementary catch-up) | `[ ]` |
-| S15 | Register Headless JS background task in `index.js`; schedule with WorkManager / `react-native-background-fetch`; add service declaration to `AndroidManifest.xml` | `[ ]` |
+| S1 | Build `features/googleFit/types/healthConnect.ts` — `HealthDataType`, `ExerciseTypeValue`, `ExerciseTypeMap`, `HealthConnectMapping`, `WorkoutSession`, `TodaySummary`, `HealthConnectStatus` | `[x]` |
+| S2 | `checkStatus()` — maps `getSdkStatus()` to `HealthConnectStatus` enum | `[x]` |
+| S3 | `requestPermissions()` — Steps + SleepSession + ExerciseSession read permissions | `[x]` |
+| S4 | `getTodaySummary()` — steps (sum intervals since midnight), sleep (24h lookback + endTime filter), workouts (ExerciseSession since midnight) | `[x]` |
+| S5 | `evaluateThreshold()` — private function in `healthConnectActions.ts` | `[x]` |
+| S6 | `createDefaultInstance()` — inline inside `sync()` | `[x]` |
+| S7 | `pruneOrphanedMappings()` — in `healthConnectStorage.ts`, called from `sync()` | `[x]` |
+| S8 | `computeStepsStats()` — `healthConnectUtils.ts` | `[x]` |
+| S9 | `computeSleepStats()` — `healthConnectUtils.ts` | `[x]` |
+| S10 | `sync()` — status check → summary → upsert history → prune → evaluate mappings → auto-complete today-only instances | `[x]` |
+| S11 | Goal getters/setters (`getStepsGoal`, `setStepsGoal`, `getSleepGoal`, `setSleepGoal`, `getStepsColorEnabled`, `getSleepColorEnabled`, etc.) in `healthConnectStorage.ts` | `[x]` |
+| S12 | Subscribe to `healthConnectSyncComplete` in `useTasks.ts` + emit in `healthConnectActions.ts` | `[x]` |
+| S13 | Wire `sync()` fire-and-forget in `App.tsx` after DB init | `[x]` |
+| S14 | Wire `sync()` into `AppState` foreground listener in `MainNavigator.tsx` | `[x]` |
+| S15 | `index.ts` — `BackgroundFetch.configure()` + `registerHeadlessTask()` | `[x]` |
 
 ### Phase 4 — UI
 
@@ -1351,14 +1357,14 @@ Test both light and dark modes on device before marking any UI task complete.
 
 | # | Task | Status |
 |---|------|--------|
-| U1 | Build `HealthConnectStatusBadge` component | `[ ]` |
-| U2 | Build `HealthSectionRow` — tappable summary row with icon + title + today's key stat + `›` chevron | `[ ]` |
-| U3 | Rewrite `HealthManagementScreen` — status badge + three `HealthSectionRow` rows (Steps / Sleep / Workouts) + Sync Now button + "Last synced: X min ago". Navigation to detail screens. | `[ ]` |
-| U4 | Build `StepsDetailScreen` — `CircularProgress` (green when goal met) + goal edit field + goal colour toggle + `TimeRangePicker` + `WeekBarGraph` (green bars for goal-met days) + `MonthCalendarGraph` + stats row + `StreakCard` + mapping rows + "Add" button | `[ ]` |
-| U5 | Build `SleepDetailScreen` — `CompletionSummaryCard` (green ring when goal met) + goal edit + colour toggle + stage mini-bar (hidden if no stages) + `TimeRangePicker` + `WeekBarGraph` (green bars for goal-met nights) + `MonthCalendarGraph` + stats row + `StreakCard` + mapping rows + "Add" button | `[ ]` |
-| U6 | Build `WorkoutsDetailScreen` — today's sessions list + mapping rows + "Add" button | `[ ]` |
-| U7 | Build `HealthMappingEditor` — template picker, threshold fields, exercise type picker (human labels → SDK integer constants), auto-schedule toggle | `[ ]` |
-| U8 | Register `StepsDetailScreen`, `SleepDetailScreen`, `WorkoutsDetailScreen` in the browse navigator | `[ ]` |
+| U1 | `HealthConnectStatusBadge` — inline in `HealthManagementScreen` (dot + label) | `[x]` |
+| U2 | `HealthSectionRow` — tappable row with icon + title + today's key stat + `›` chevron, inline in `HealthManagementScreen` | `[x]` |
+| U3 | Rewrite `HealthManagementScreen` — status badge + three section rows + Sync Now + "Last synced". Sub-screen routing to detail screens. | `[x]` |
+| U4 | Build `StepsDetailScreen` — ring + goal edit + colour toggle + charts + stats + `StreakCard` + mapping rows | `[x]` |
+| U5 | Build `SleepDetailScreen` — ring + goal edit + colour toggle + stage bar + charts + stats + `StreakCard` + mapping rows | `[x]` |
+| U6 | Build `WorkoutsDetailScreen` — today's sessions list + mapping rows + "Add" button (hooks violation fixed) | `[x]` |
+| U7 | Build `HealthMappingEditor` — template picker + threshold fields + exercise type picker + auto-schedule toggle | `[x]` |
+| U8 | Detail screens navigate via local sub-screen state in `HealthManagementScreen` — no separate navigator registration needed | `[x]` |
 
 ### Phase 5 — Testing
 

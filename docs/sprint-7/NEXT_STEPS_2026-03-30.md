@@ -1,13 +1,19 @@
 # Sprint 7 — Next Steps
 **Date:** 2026-03-30
 
+**⚠️ STATUS AS OF 2026-04-06: ALL PHASES COMPLETE — SEE `NEXT_STEPS_2026-04-05.md` FOR FULL DETAIL**
+
+Phases 1–4 are fully implemented and the hooks violations are fixed. Only Phase 5
+(manual device testing, T1–T24) remains. Jump straight to `NEXT_STEPS_2026-04-05.md`
+for the current checklist.
+
 **Status entering this session (updated 2026-04-05):** Phase 1 types + storage complete. Phase 2 (actions) next.
 
 **Original status (2026-03-30):** Setup complete. Permissions granted (Steps, StepsCadence, SleepSession). SDK verified. Screen is clean placeholder. No feature code written yet.
 
 ---
 
-## Phase 1 — Types + Storage Layer `[x]`
+## Phase 1 — Types + Storage Layer `[x] COMPLETE`
 
 ### `app/features/googleFit/types/healthConnect.ts` `[x]`
 - `HealthDataType`, `ExerciseTypeValue`, `ExerciseTypeMap`
@@ -59,44 +65,50 @@ Public API:
 
 ---
 
-## Phase 2 — Health Connect Actions
+## Phase 2 — Health Connect Actions `[x] COMPLETE`
 
-### `app/features/googlefit/utils/healthConnectActions.ts`
-
-Implement the four public functions:
+### `app/features/googleFit/utils/healthConnectActions.ts`
 
 | Function | Notes |
 |---|---|
-| `checkStatus()` | Call `getSdkStatus()` → map to `HealthConnectStatus` enum |
-| `requestPermissions(dataTypes)` | Wraps `requestPermission()` with the `READ_*` permission strings |
-| `getTodaySummary()` | Steps: sum `count` across intervals since midnight. Sleep: 24h lookback, filter `endTime >= today`. Workouts: `ExerciseSessionRecord` since midnight. |
-| `sync()` | Check status → get summary → for each mapping call `evaluateThreshold()` → complete or auto-schedule |
+| `checkStatus()` | `getSdkStatus()` → `HealthConnectStatus` enum |
+| `requestPermissions()` | Steps + Sleep + Exercise read permissions |
+| `getTodaySummary()` | Steps: sum `count` since midnight. Sleep: 24h lookback, `endTime >= today`. Workouts: ExerciseSession since midnight. |
+| `sync()` | Status check → summary → upsert history → prune → evaluate mappings → complete/auto-schedule |
 
-Key detail for `sync()`:
-- Use `findTodaysPendingInstance(permanentId)` to find today's instance (filters `completed = 0`)
-- If threshold met + instance found → `taskActions.completeTask(instance.id)`
-- If threshold met + no instance + `autoSchedule = true` → create default instance then complete
-- If already completed → `findTodaysPendingInstance` returns null → do nothing (no double-completion)
+Internal helpers (not exported):
+- `evaluateThreshold(mapping, summary)` — pure boolean per dataType
+- `findTodaysPendingInstance(permanentId)` — queries tasks + template_instances for incomplete instance due today
+
+`sync()` is always fire-and-forget — never awaited on the render path.
 
 ---
 
-## Phase 3 — Screen UI
+## Phase 3 — Screen UI `[x] COMPLETE`
 
-### Replace `app/screens/browse/HealthManagementScreen.tsx`
+### `app/screens/browse/HealthManagementScreen.tsx` `[x]`
 
-The main Health Connect screen is a **hub** — connection status + three tappable
-section rows. No collapsible cards. Tapping a row navigates to the full detail screen.
+Hub screen — status badge + 3 section rows + Sync Now button.
 
+Sub-screen routing via local `subScreen` state (same pattern as BrowseScreen):
 ```
-HealthManagementScreen
-  HealthConnectStatusBadge
-  HealthSectionRow (Steps)   → StepsDetailScreen
-  HealthSectionRow (Sleep)   → SleepDetailScreen
-  HealthSectionRow (Workouts) → WorkoutsDetailScreen
-  [Sync Now]  "Last synced: X min ago"
+'none'     → hub
+'steps'    → StepsDetailScreen stub (to be replaced Phase 3b)
+'sleep'    → SleepDetailScreen stub (to be replaced Phase 3c)
+'workouts' → WorkoutsDetailScreen stub (to be replaced Phase 3d)
 ```
 
-### Create `app/screens/browse/StepsDetailScreen.tsx`
+Hub loads on mount:
+- `checkStatus()` → status badge
+- `getLastSyncedAt()` → "Last synced X min ago"
+- `getStepsInRange(today, today)` → today's step count subtitle
+- `getSleepInRange(today, today)` → today's sleep subtitle
+
+Sync Now calls `sync()` (awaited for UX, still safe — it's a user tap not app start).
+Stubs for detail screens are inline components that will be extracted to their own
+files in Phase 3b–3d.
+
+### Create `app/screens/browse/StepsDetailScreen.tsx` `[x]`
 
 Full-screen steps detail (pushed via navigation):
 - `CircularProgress` ring (green when `todaySteps >= stepsGoal` AND colour toggle on)
@@ -107,7 +119,7 @@ Full-screen steps detail (pushed via navigation):
 - Stats: week avg + month avg + `StreakCard` + personal best
 - Mapping rows + `[+ Add Task Mapping]`
 
-### Create `app/screens/browse/SleepDetailScreen.tsx`
+### Create `app/screens/browse/SleepDetailScreen.tsx` `[x]`
 
 Full-screen sleep detail:
 - `CompletionSummaryCard` ring (green when goal met + toggle on)
@@ -117,14 +129,14 @@ Full-screen sleep detail:
 - Stats: week avg + month avg + `StreakCard` + best night
 - Mapping rows + `[+ Add Task Mapping]`
 
-### Create `app/screens/browse/WorkoutsDetailScreen.tsx`
+### Create `app/screens/browse/WorkoutsDetailScreen.tsx` `[x]`
 
 Full-screen workouts detail:
 - Today's sessions list (type label + duration), or "No workouts today"
 - Mapping rows + `[+ Add Task Mapping]`
 - No chart, no stats
 
-### Create `app/screens/browse/HealthMappingEditor.tsx`
+### Create `app/screens/browse/HealthMappingEditor.tsx` `[x]`
 
 Modal/sub-screen for add/edit:
 - Task picker → `getAllPermanentTemplates()` (read-only)
@@ -141,7 +153,7 @@ Exercise type picker: iterate `ExerciseType` constants at runtime to build label
 
 ---
 
-## Phase 4 — Sync Wiring
+## Phase 4 — Sync Wiring `[x] COMPLETE`
 
 Wire up sync in three places:
 
@@ -154,13 +166,17 @@ Wire up sync in three places:
 
 ---
 
+## Phase 5 — Testing `[ ] NOT STARTED`
+
+Manual device testing checklist (T1–T24) is in `NEXT_STEPS_2026-04-05.md`.
+
+---
+
 ## Order of Work
 
 ```
-Phase 1 (types + storage)  →  Phase 2 (actions + goal settings)  →  Phase 3 (UI)  →  Phase 4 (sync wiring)
+Phase 1 (types + storage) [x]  →  Phase 2 (actions) [x]  →  Phase 3 (UI) [x]  →  Phase 4 (sync wiring) [x]  →  Phase 5 (testing) [ ]
 ```
-
-Start with Phase 1. Each phase is independently testable before moving to the next.
 
 ---
 

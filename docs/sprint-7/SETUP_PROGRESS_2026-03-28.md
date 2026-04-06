@@ -1,6 +1,10 @@
 # Sprint 7 — Health Connect Setup Progress
 **Date:** 2026-03-28
 
+> **STATUS AS OF 2026-04-06:** Setup was fully complete at the end of this session.
+> All 6 remaining setup tasks are `[x]`. Full implementation (Phases 1–4) is also
+> complete. Only manual device testing (Phase 5) remains — see `NEXT_STEPS_2026-04-05.md`.
+
 ---
 
 ## What We Set Up
