@@ -1,10 +1,19 @@
-# Sprint 7 — Health Connect Auto-Complete
+# Sprint 7 — Health Connect Integration
 
 **Goal:** Read sleep, steps, and workout data from Health Connect (Android) on app
-open and in the background. Let users assign health thresholds to permanent task
-templates — entirely from within the Health Connect screen. When a threshold is met,
-auto-complete the mapped permanent task instance for that day. If no instance is
-scheduled, auto-schedule a default one.
+open and in the background.
+
+- **Steps & Sleep** are first-class tracking sections: each has its own persistent
+  history table, statistics (averages, streaks, personal bests), and visual displays
+  (charts/graphs). Task auto-completion is a feature within these sections but not
+  their primary purpose.
+- **Workouts** are lightweight: minimal display (today's sessions only), no historical
+  storage, no charts. Their sole purpose is to auto-complete assigned permanent task
+  templates when a workout threshold is met.
+
+Users configure task mappings (threshold → permanent template) from within the
+Health Connect screen. When a threshold is met the mapped task instance is
+auto-completed. If no instance is scheduled and `autoSchedule` is on, one is created.
 
 **Platform:** Android only (Health Connect is Google/Android).
 
@@ -26,14 +35,14 @@ into the existing task action layer as a consumer.
 Everything below must be done once before implementation begins. The project
 already has an `android/` directory (bare workflow) so no ejection is needed.
 
-### Step 1 — Install npm packages
+### Step 1 — Install npm packages `[x]`
 
 ```bash
 npm install react-native-health-connect
 npm install react-native-background-fetch
 ```
 
-### Step 2 — Connect a physical Android device
+### Step 2 — Connect a physical Android device `[x]`
 
 Health Connect does not work in the emulator. You need a real device.
 
@@ -53,7 +62,7 @@ Health Connect does not work in the emulator. You need a real device.
 > install it via Android Studio → SDK Manager → SDK Tools → Android SDK
 > Platform-Tools, or add its path to your system PATH.
 
-### Step 3 — Rebuild the native Android app
+### Step 3 — Rebuild the native Android app `[x]`
 
 Installing native modules changes the native layer. A JS-only reload is not
 enough — you must do a full native rebuild. Use `npx expo` (not `expo` directly):
@@ -66,7 +75,7 @@ npx expo run:android
 > library's README for any `build.gradle` or `settings.gradle` changes required
 > for the installed version.
 
-### Step 4 — Add permissions to `android/app/src/main/AndroidManifest.xml`
+### Step 4 — Add permissions to `android/app/src/main/AndroidManifest.xml` `[x]`
 
 Inside `<manifest>`, add the Health Connect read permissions:
 
@@ -98,7 +107,7 @@ permissions rationale screen (required by the library):
 Also add the WorkManager service declaration for Android 14+ battery exemption
 (see §12 for the full block).
 
-### Step 5 — Verify Health Connect is available on your test device
+### Step 5 — Verify Health Connect is available on your test device `[x]`
 
 | Android version | What to do |
 |----------------|------------|
@@ -106,7 +115,7 @@ Also add the WorkManager service declaration for Android 14+ battery exemption
 | Android 9–13 | Install **Health Connect** from the Google Play Store |
 | Android < 9 | Not supported — feature will be hidden automatically |
 
-### Step 6 — Install a fitness app and grant permissions
+### Step 6 — Install a fitness app and grant permissions `[x]`
 
 Health Connect is only useful if another app is writing data to it.
 
@@ -118,7 +127,7 @@ Health Connect is only useful if another app is writing data to it.
 4. You can also verify permissions inside the Health Connect app itself
    (Settings → Apps → Health Connect → App permissions).
 
-### Step 7 — Verify the SDK exercise type values
+### Step 7 — Verify the SDK exercise type values `[x]`
 
 `react-native-health-connect` exports exercise type constants but the exact form
 (integer vs lowercase string) may vary by version. Before building the exercise
@@ -132,6 +141,8 @@ console.log(ExerciseSessionRecord.EXERCISE_TYPES);
 
 Log this once on a physical device and record the result. The picker and
 `evaluateThreshold()` must use these values, not the key strings.
+
+**Result (confirmed 2026-03-28):** Values are **integers**. e.g. `STRENGTH_TRAINING: 70`, `RUNNING: 56`, `WALKING: 79`, `YOGA: 83`, `OTHER_WORKOUT: 0`. Full range is 0–83.
 
 ---
 
@@ -154,53 +165,179 @@ Log this once on a physical device and record the result. The picker and
 
 ---
 
+## Section Design Philosophy
+
+### Navigation pattern — dedicated detail screens
+
+Each health section (Steps, Sleep, Workouts) is a **tappable summary row** on the
+main `HealthManagementScreen`. Tapping opens a **dedicated full-screen detail view**
+for that section. This mirrors the stats screen pattern: `StatPreviewCard` → detail
+screen (`OverallDetailScreen`, `CategoryDetailScreen`, `PermanentDetailScreen`).
+
+**Main screen** shows: section icon + title + today's key stat + goal-met indicator.
+**Detail screens** (`StepsDetailScreen`, `SleepDetailScreen`, `WorkoutsDetailScreen`)
+contain all charts, stats, and mapping rows.
+
+This replaces the earlier collapsible-section-card design. No `Animated` expand/collapse
+is used — navigation is instant with a full-screen push (same as stats detail screens).
+
+### Goal threshold — unified colour feedback
+
+The goal value (step count for steps; hours for sleep) drives **two things**:
+
+1. **Graph success colour.** Any day/night that meets or exceeds the goal turns green
+   ("success colour") in all graph views — `WeekBarGraph` bars, `MonthCalendarGraph`
+   cells, and the today progress ring. Failing-goal days use the section's default accent
+   colour; goal-met days use `theme.colors.success` (green).
+2. **Task auto-complete trigger.** The same goal value is the threshold for
+   `evaluateThreshold()`. Only one goal value is stored per section — it drives both
+   visuals and task completion. The user sets their goal once.
+
+**Toggle.** A per-section toggle (`goalColorEnabled: boolean`, stored in meta)
+controls whether the green colouring is applied. When disabled, all days use the
+section accent colour regardless of goal status. The toggle is visible inside the
+detail screen. The task auto-complete threshold is NOT affected by this toggle —
+tasks complete whenever the goal is met regardless of the visual setting.
+
+### Reuse of existing stats components
+
+The following components from `app/components/stats/` are used **as-is** — no
+modifications. The health sections are built by composing them with health data:
+
+| Component | Where reused | Data mapping |
+|-----------|-------------|--------------|
+| `WeekBarGraph` | Steps + Sleep **weekly view** | `DayData.count` = steps or sleep minutes per day; `DayData.color` overridden to `theme.colors.success` when value ≥ goal and toggle enabled |
+| `MonthCalendarGraph` | Steps + Sleep **monthly view** | `CalendarDayData.completed` = steps or sleep minutes, `.total` = daily goal (drives fill ratio); goal-met cells use success colour |
+| `TimeRangePicker` | Chart view toggle (Week / Month) in Steps + Sleep | Only two tabs needed; `color` = section accent |
+| `StreakCard` | Steps + Sleep streak display | step-goal streak / sleep-goal streak |
+| `CircularProgress` | Steps today ring | `percent` = (todaySteps / goal) × 100; ring colour = success green when goal met |
+| `CompletionSummaryCard` | Sleep last-night ring | `completed` = sleep minutes, `total` = goal minutes; ring colour = success green when goal met |
+
+> **Dark mode:** All components must use `useTheme()` for colours. No hardcoded hex
+> values in health components. Use `theme.colors.success` for the goal-met green,
+> `theme.colors.primary` (or section accent) for default bars. Card backgrounds must
+> use `theme.colors.card` / `theme.colors.background`. Text must use
+> `theme.colors.text` / `theme.colors.textSecondary`. Test both light and dark modes.
+
+Three components from earlier plan drafts (`HealthBarChart`, `HealthStatsPanel`,
+`HealthWeeklyAveragesChart`) are **not needed** — existing components cover all
+chart and stats use cases without modification.
+
+---
+
+### Steps — rich tracking section
+Steps is a primary health metric. The section stores and displays:
+- **Today's live count** with a progress ring toward the daily goal (green when goal met)
+- **Chart area** with a Week / Month toggle:
+  - **Weekly view** (`WeekBarGraph`) — one bar per day (Mon–Sun), height = step count,
+    bars coloured green for goal-met days (when toggle on), navigable to past weeks
+  - **Monthly view** (`MonthCalendarGraph`) — calendar grid, each day cell filled by
+    steps/goal ratio; goal-met cells coloured green, navigable to past months
+- **Statistics panel:** this-week average, this-month average, personal best day,
+  current streak (consecutive days meeting the goal), longest streak ever
+- **Goal setting:** editable numeric field (e.g. 10,000). The same value drives
+  both the green-threshold colouring and the task auto-complete threshold.
+- **Goal colour toggle:** on/off switch that enables/disables green colouring for goal-met days
+- **Task mappings** — step goal → permanent template
+
+Steps history is persisted to `health_steps_history` (one row per day). All chart
+views and stats are computed from this table — no re-querying Health Connect.
+
+### Sleep — rich tracking section
+Sleep is a primary health metric. The section stores and displays:
+- **Last night's duration** ring (h m vs goal) — green when goal met
+- **Sleep stage breakdown** if stages available (light / deep / REM / awake inline bar)
+- **Chart area** with a Week / Month toggle:
+  - **Weekly view** (`WeekBarGraph`) — one bar per night (Mon–Sun), height = sleep
+    minutes, bars green for goal-met nights (when toggle on), navigable to past weeks
+  - **Monthly view** (`MonthCalendarGraph`) — calendar grid, each night's cell filled
+    by sleepMins/goalMins ratio; goal-met cells green, navigable to past months
+- **Statistics panel:** this-week average sleep, this-month average sleep, personal
+  best night, current streak (nights meeting the sleep goal), longest streak
+- **Goal setting:** editable hours field (e.g. 8.0). The same value drives both
+  the green-threshold colouring and the task auto-complete threshold.
+- **Goal colour toggle:** on/off switch that enables/disables green colouring for goal-met nights
+- **Task mappings** — sleep hours threshold → permanent template
+
+Sleep history is persisted to `health_sleep_history`.
+
+### Workouts — lightweight task-completion trigger
+Workouts do not need history, charts, or statistics. The section shows:
+- **Today's sessions** — a brief list: exercise type label + duration (e.g. "Strength Training · 45 min")
+- **Task mapping rows** — each with met/unmet badge
+- **"+ Add Task Mapping"** button
+
+No `health_workouts_history` table. Workout data is read fresh each sync and
+discarded after threshold evaluation. The workout section's entire value is
+auto-completing the right tasks; the display is just context for the user.
+
+> **Auto-complete scope:** Workout task auto-complete only targets **today's task
+> instances**. A mapping will never complete an instance from a previous day.
+
+---
+
 ## 1. User-Facing Flow
 
 ### Setup (done entirely from the Health Connect screen)
 
 1. User opens **Browse → Health Connect**.
-2. They see three sections: **Steps**, **Sleep**, **Workouts**.
-3. Inside a section, user taps **"+ Add Task Mapping"**.
-4. A picker shows all existing permanent task templates (read-only list — no
-   template is modified).
-5. User picks a template (e.g. "Push Day") and sets the threshold for that section:
-   - **Steps** → step count goal (e.g. 8000)
-   - **Sleep** → minimum hours (e.g. 7.0)
-   - **Workout** → exercise type filter (any / specific) + optional min duration
-6. User saves. The mapping is stored in the Health Connect mappings table only.
-   The permanent task template is not touched in any way.
-7. Multiple templates can be mapped to the same data type
-   (e.g. "Push Day", "Pull Day", "Leg Day" all under Workouts).
-8. Each mapping has an **auto-schedule** toggle: if on and no instance exists for
+2. Main screen shows three tappable rows: **Steps**, **Sleep**, **Workouts**.
+3. Tapping a row opens the dedicated detail screen for that section.
+4. Inside a detail screen, the user sets their **goal** (step count or sleep hours).
+   This single goal value drives both:
+   - The green "goal met" colouring across all graph views for that section
+   - The task auto-complete threshold for any mapped tasks
+5. User taps **"+ Add Task Mapping"** to link a permanent task template.
+6. A picker shows all existing permanent task templates (read-only — no template
+   is modified).
+7. User picks a template and saves. The mapping is stored in the Health Connect
+   mappings table only.
+8. Multiple templates can be mapped to the same data type.
+9. Each mapping has an **auto-schedule** toggle: if on and no instance exists for
    today when the threshold is met, one will be auto-created.
+10. A **"Goal colour" toggle** inside each detail screen enables/disables the green
+    colouring for goal-met days. Task auto-complete is NOT affected by this toggle.
 
 ### Daily auto-complete
 
-Sync runs in two modes:
+Sync runs in three modes:
 
+- **App start (guaranteed):** `sync()` runs once when the app loads — before any
+  React navigation renders. This ensures the task list is up-to-date on every open.
 - **Background (primary):** A Headless JS / WorkManager job fires periodically
-  while the app is closed or backgrounded — typically every 15–30 minutes. This
-  ensures tasks are completed throughout the day without the user having to open
-  the app.
-- **Foreground (supplementary):** `sync()` also runs on app foreground via an
-  `AppState` listener as a catch-up for any mappings the background job may have
-  missed (e.g. after first install before background job is registered).
+  while the app is closed or backgrounded — typically every 15–30 minutes.
+- **Manual (optional):** A **"Sync Now"** button on the main Health Connect screen
+  triggers an immediate `sync()`. This is a convenience fallback and is unlikely
+  to be needed often.
 
-Both paths call the same `sync()` function.
+> The earlier `AppState` listener is kept as a lightweight catch-up but is no longer
+> the primary trigger — app-start sync supersedes it.
 
-In both cases:
+Both automatic paths call the same `sync()` function.
+
+In all cases:
 1. Service reads today's data from Health Connect.
-2. For each mapping: evaluate threshold → find today's pending or manually-uncompleted instance.
+2. For each mapping: evaluate threshold → find **today's** pending instance only.
 3. If threshold met and a pending instance exists: `taskActions.completeTask()`.
 4. If threshold met and no instance but auto-schedule on: create then complete.
 5. If the task was already manually completed by the user: `findTodaysPendingInstance()`
    returns `null` (it filters `completed = 0`) — sync does nothing. No double-completion.
 
+> **Workout scope guard:** Workout auto-complete only targets task instances whose
+> `due_date` matches today. `getPendingInstanceByTemplateId(templateId, today)` already
+> scopes to today — no additional guard needed, but the date parameter is mandatory
+> and must always pass `todayDateString()`, never a past date.
+
 ---
 
 ## 2. Health Connect Screen UI
 
+### 2a. Main screen — `HealthManagementScreen.tsx`
+
 **File:** `app/screens/browse/HealthManagementScreen.tsx` (replace the placeholder)
+
+The main screen is a lightweight hub: connection status + three tappable section rows.
+Tapping a row navigates to the dedicated detail screen for that section.
 
 ```
 ┌─────────────────────────────────────┐
@@ -209,48 +346,169 @@ In both cases:
 │  ● Connected   [Sync Now]           │
 │  Last synced: 2 min ago             │
 ├─────────────────────────────────────┤
-│  ▼  Steps                           │
-│     Today: 6,432 steps              │
-│     ─────────────────────────────── │
-│     Daily Walk       8,000 steps    │
-│     Progress: ████████░░ 80%   –    │
-│                                     │
-│     [+ Add Task Mapping]            │
+│  👟  Steps                    ›     │   ← tappable row → StepsDetailScreen
+│      Today: 6,432 / 10,000 ✓       │     (green ✓ when goal met)
 ├─────────────────────────────────────┤
-│  ▼  Sleep                           │
-│     Last night: 7h 12m              │
-│     ─────────────────────────────── │
-│     Sleep Goal       7h 00m min     │
-│     Status: ✓ Met                   │
-│                                     │
-│     [+ Add Task Mapping]            │
+│  🌙  Sleep                    ›     │   ← tappable row → SleepDetailScreen
+│      Last night: 7h 12m ✓ Goal met │
 ├─────────────────────────────────────┤
-│  ▼  Workouts                        │
-│     Today: 1 session (45 min)       │
-│     Strength Training               │
-│     ─────────────────────────────── │
-│     Push Day   Strength  30m min ✓  │
-│     Pull Day   Strength  30m min –  │
-│     Leg Day    Any       0m min  –  │
-│                                     │
-│     [+ Add Task Mapping]            │
+│  🏋  Workouts                 ›     │   ← tappable row → WorkoutsDetailScreen
+│      Today: Strength Training · 45m │
 └─────────────────────────────────────┘
 ```
 
-### Section content
-
-Each section shows:
-- **Today's summary** from `healthConnectActions.getTodaySummary()`
-- **Mapping rows** — template name + threshold summary + met/not-met badge
-- **"+ Add Task Mapping"** button — opens the mapping editor (§3)
-- Tapping an existing mapping row opens the editor to edit or delete it
+Each row shows a one-line summary of today's key stat. The `›` chevron signals
+navigation. No charts, no mapping rows, no collapsible animation on this screen.
 
 ### Connection status
 
 - `healthy` → green dot "Connected"
 - `permission_missing` → amber "Permissions needed" + "Grant" button
 - `not_installed` → red "Health Connect not installed" + "Install" button
-- `not_supported` → grey "Not supported on this device" — sections hidden
+- `not_supported` → grey "Not supported on this device" — section rows hidden
+
+---
+
+### 2b. Steps detail screen — `StepsDetailScreen.tsx`
+
+**File:** `app/screens/browse/StepsDetailScreen.tsx` (new)
+
+Full-screen view pushed from the main Health Connect screen. Back button returns to
+the main screen.
+
+```
+┌─────────────────────────────────────┐
+│  ← Back               Steps        │   (purple header)
+├─────────────────────────────────────┤
+│        ◯ 6,432 / 10,000            │   ← CircularProgress ring
+│          Goal: 10,000 steps [edit] │     (green ring when met)
+│                                     │
+│  Goal colour  ●────  (on)           │   ← toggle for green threshold visuals
+├─────────────────────────────────────┤
+│     [ Week ]  [ Month ]             │   ← TimeRangePicker toggle
+│                                     │
+│  (Week view — WeekBarGraph)         │
+│  [Mo][Tu][We][Th][Fr][Sa][Su]       │
+│  ████ 🟩🟩 ████ ██░ 🟩🟩🟩 ░░░       │   green bars = days that met goal
+│  8,204 10,200 …                     │
+│                                     │
+│  (Month view — MonthCalendarGraph)  │
+│  Su Mo Tu We Th Fr Sa               │
+│  [  ][  ][🟡][🟢][🔴][🟢][  ]      │   green cells = days that met goal
+│  …                                  │
+├─────────────────────────────────────┤
+│  Avg this week:  8,204 steps        │
+│  Avg this month: 7,890 steps        │
+│  Best day: 14,320                   │
+│  ── Streak ──────────────────────── │
+│  [StreakCard: 4d streak / 12d best] │
+├─────────────────────────────────────┤
+│  ── Task Mappings ─────────────────  │
+│  Daily Walk    10,000 steps  ●──   │
+│  [+ Add Task Mapping]               │
+└─────────────────────────────────────┘
+```
+
+**Steps detail content:**
+
+- **Today's progress ring** — `CircularProgress` with `percent` = (todaySteps / stepGoal) × 100.
+  Ring colour = `theme.colors.success` when goal met and toggle on, else section accent.
+- **Goal field** — inline editable numeric (tapping opens a numeric input). Persisted to
+  `health_connect_meta` key `steps_goal`. This same value is used as `step_goal` in
+  `health_connect_mappings` rows for auto-complete thresholds.
+- **Goal colour toggle** — switches green threshold visuals on/off. Persisted to
+  `health_connect_meta` key `steps_goal_color_enabled`. Does NOT affect auto-complete.
+- **Chart toggle** — `TimeRangePicker` with two tabs: **Week** and **Month**.
+- **Weekly view** — `WeekBarGraph`, `DayData.count` = steps per day. When goal colour
+  toggle is on, each bar's colour is `theme.colors.success` if `count >= stepGoal`,
+  otherwise section accent. Pass per-bar colour via `DayData.color` if the component
+  supports it; otherwise wrap with conditional styling at the call site.
+- **Monthly view** — `MonthCalendarGraph`, `CalendarDayData.completed` = steps,
+  `.total` = stepGoal. Existing component already colours cells green ≥ 60% fill.
+  When goal colour toggle is on and completed >= total, the cell is `theme.colors.success`.
+- **Stats panel** — week avg, month avg, personal best, `StreakCard`.
+- **Mapping rows** + **"+ Add Task Mapping"** button.
+
+---
+
+### 2c. Sleep detail screen — `SleepDetailScreen.tsx`
+
+**File:** `app/screens/browse/SleepDetailScreen.tsx` (new)
+
+```
+┌─────────────────────────────────────┐
+│  ← Back               Sleep        │   (indigo header)
+├─────────────────────────────────────┤
+│  [CompletionSummaryCard ring]        │
+│   7h 12m slept  /  8h 0m goal       │   ← green ring when goal met
+│   ✓ Goal met                         │
+│   Goal: 8.0 hours [edit]            │
+│                                     │
+│  Goal colour  ●────  (on)           │
+│  ── Stage breakdown ─────────────── │
+│  [Light 2h][Deep 1.5h][REM 2h][…]  │   hidden if no stage data
+├─────────────────────────────────────┤
+│     [ Week ]  [ Month ]             │
+│                                     │
+│  (Week view — WeekBarGraph)         │
+│  [Mo][Tu][We][Th][Fr][Sa][Su]       │
+│  🟩🟩 ███ ██░ 🟩🟩 ██░ 🟩🟩🟩 ░░░    │   green = nights that met goal
+│  8h   6h  5h   8h  5h   9h   0h    │
+│                                     │
+│  (Month view — MonthCalendarGraph)  │
+│  Su Mo Tu We Th Fr Sa               │
+│  [  ][  ][🔴][🟢][🟡][🟢][  ]     │
+│  …                                  │
+├─────────────────────────────────────┤
+│  Avg this week:  6h 54m             │
+│  Avg this month: 6h 38m             │
+│  Best night: 9h 10m                 │
+│  ── Streak ──────────────────────── │
+│  [StreakCard: 4d streak / 8d best]  │
+├─────────────────────────────────────┤
+│  ── Task Mappings ─────────────────  │
+│  Sleep Goal    8h 00m  ●──          │
+│  [+ Add Task Mapping]               │
+└─────────────────────────────────────┘
+```
+
+**Sleep detail content:**
+
+- **Last night summary ring** — `CompletionSummaryCard`, `completed` = sleep minutes,
+  `total` = goalMins. Ring colour = `theme.colors.success` when goal met + toggle on.
+- **Goal field** — inline editable hours (e.g. 8.0). Persisted to `health_connect_meta`
+  key `sleep_goal_hours`. Drives both ring colour threshold and auto-complete threshold.
+- **Goal colour toggle** — `health_connect_meta` key `sleep_goal_color_enabled`.
+- **Stage mini-bar** — proportional light/deep/REM/awake segments, hidden when no stage data.
+- **Chart toggle**, **Weekly view**, **Monthly view** — same pattern as Steps.
+  Bar/cell colours follow goal colour toggle: green when slept ≥ goal.
+- **Stats panel** + **Mapping rows** + **"+ Add Task Mapping"**.
+
+---
+
+### 2d. Workouts detail screen — `WorkoutsDetailScreen.tsx`
+
+**File:** `app/screens/browse/WorkoutsDetailScreen.tsx` (new)
+
+```
+┌─────────────────────────────────────┐
+│  ← Back             Workouts       │   (teal header)
+├─────────────────────────────────────┤
+│  ── Today's Sessions ────────────── │
+│  Strength Training · 45 min         │
+│  Running · 32 min                   │
+│  (or "No workouts recorded today")  │
+├─────────────────────────────────────┤
+│  ── Task Mappings ─────────────────  │
+│  Push Day   Strength  30m min  ✓    │
+│  Pull Day   Strength  30m min  –    │
+│  Leg Day    Any       0m min   –    │
+│                                     │
+│  [+ Add Task Mapping]               │
+└─────────────────────────────────────┘
+```
+
+No charts, no goal setting, no colour toggle. Workout data is read fresh each sync.
 
 ---
 
@@ -302,7 +560,51 @@ function except `getAllPermanentTemplates()` to populate the picker (read-only).
 All new tables and types live entirely within the Health Connect feature.
 Zero changes to any existing table or type.
 
-### 4a. `health_connect_mappings` table
+### 4a. `health_steps_history` table (new — steps only)
+
+Stores one row per calendar day. Written by `sync()` after reading HC steps data.
+Powers the 7-day chart and statistics panel without requiring a fresh HC query.
+
+```sql
+CREATE TABLE IF NOT EXISTS health_steps_history (
+  date       TEXT PRIMARY KEY,  -- 'YYYY-MM-DD'
+  step_count INTEGER NOT NULL,
+  goal       INTEGER,           -- the step goal active on that day (nullable — stored for streak calc)
+  synced_at  TEXT NOT NULL      -- ISO 8601 timestamp of last HC read for this date
+);
+```
+
+Statistics computed from this table at display time:
+- **7-day average:** `AVG(step_count) WHERE date >= 7 days ago`
+- **Personal best:** `MAX(step_count) WHERE step_count > 0`
+- **Current streak:** count consecutive recent days where `step_count >= goal`
+- **Longest streak:** computed over full history
+
+### 4b. `health_sleep_history` table (new — sleep only)
+
+Stores one row per night (keyed to the day the sleep *ended*, matching the
+24h-lookback query strategy). Written by `sync()`.
+
+```sql
+CREATE TABLE IF NOT EXISTS health_sleep_history (
+  date          TEXT PRIMARY KEY,  -- 'YYYY-MM-DD' — the date sleep ended (morning of)
+  duration_mins INTEGER NOT NULL,  -- total sleep in minutes
+  goal_hours    REAL,              -- minimum hours goal active that night (nullable)
+  has_stages    INTEGER NOT NULL DEFAULT 0,  -- 1 if stage breakdown was available
+  light_mins    INTEGER,           -- SleepStageType LIGHT
+  deep_mins     INTEGER,           -- SleepStageType DEEP
+  rem_mins      INTEGER,           -- SleepStageType REM
+  awake_mins    INTEGER,           -- SleepStageType AWAKE (in-session wakes)
+  synced_at     TEXT NOT NULL
+);
+```
+
+Statistics computed from this table at display time:
+- **7-day average:** `AVG(duration_mins) WHERE date >= 7 days ago` → convert to h m
+- **Personal best:** `MAX(duration_mins) WHERE duration_mins > 0`
+- **Nights met goal this week:** `COUNT(*) WHERE date >= 7 days ago AND duration_mins >= goal_hours * 60`
+
+### 4c. `health_connect_mappings` table
 
 Stores each threshold → template assignment.
 
@@ -338,7 +640,7 @@ user opens the **Health Connect screen**, not on every app open. Running a delet
 sweep on every `AppState` change is unnecessary overhead; the INNER JOIN already
 neutralises orphans at sync time, so the prune is cosmetic cleanup only.
 
-### 4b. `health_connect_meta` table
+### 4d. `health_connect_meta` table
 
 Stores display metadata only — not used as a sync guard.
 
@@ -347,7 +649,12 @@ CREATE TABLE IF NOT EXISTS health_connect_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
--- Used to store: last_synced_at (display timestamp for "Last synced: X min ago")
+-- Keys stored in this table:
+--   last_synced_at          ISO 8601 timestamp — display only ("Last synced: X min ago")
+--   steps_goal              integer string, e.g. "10000" — shared goal for graph colour + auto-complete
+--   steps_goal_color_enabled "1" or "0" — whether green colouring is active for steps graphs
+--   sleep_goal_hours        real string, e.g. "8.0" — shared goal for graph colour + auto-complete
+--   sleep_goal_color_enabled "1" or "0" — whether green colouring is active for sleep graphs
 ```
 
 > **Why no `last_read_date` sync guard?** The previous design blocked re-reads if
@@ -359,9 +666,9 @@ CREATE TABLE IF NOT EXISTS health_connect_meta (
 > Double-completion is prevented by `findTodaysPendingInstance()` filtering
 > `completed = 0` — not by date-blocking. See §8.
 
-### 4c. TypeScript types (Health Connect feature only)
+### 4e. TypeScript types (Health Connect feature only)
 
-**File:** `app/features/healthConnect/types/healthConnect.ts` (new)
+**File:** `app/features/googlefit/types/healthConnect.ts` (new)
 
 ```ts
 export type HealthDataType = 'steps' | 'sleep' | 'workout';
@@ -414,11 +721,53 @@ export interface WorkoutSession {
   endTime: number;    // UTC ms
 }
 
+export interface SleepStageBreakdown {
+  lightMins:  number;
+  deepMins:   number;
+  remMins:    number;
+  awakeMins:  number;
+}
+
 export interface TodaySummary {
   steps: number | null;
   /** Total sleep hours from sessions that ENDED today (handles overnight sessions) */
   sleepHours: number | null;
+  /** Stage breakdown — null if no stage data was available from the sleep record */
+  sleepStages: SleepStageBreakdown | null;
   workouts: WorkoutSession[] | null;
+}
+
+/** One row from health_steps_history */
+export interface StepsDayRecord {
+  date:      string;   // 'YYYY-MM-DD'
+  stepCount: number;
+  goal:      number | null;
+}
+
+/** One row from health_sleep_history */
+export interface SleepDayRecord {
+  date:          string;   // 'YYYY-MM-DD' — the morning the sleep ended
+  durationMins:  number;
+  goalHours:     number | null;
+  stages:        SleepStageBreakdown | null;  // null if has_stages = 0
+}
+
+/** Computed from history table — passed to the Steps statistics panel */
+export interface StepsStats {
+  avgWeekSteps:    number | null;   // avg per active day this calendar week
+  avgMonthSteps:   number | null;   // avg per active day this calendar month
+  personalBest:    number | null;
+  currentStreak:   number;  // days
+  longestStreak:   number;  // days
+}
+
+/** Computed from history table — passed to the Sleep statistics panel */
+export interface SleepStats {
+  avgWeekMins:      number | null;  // avg sleep minutes per night this calendar week
+  avgMonthMins:     number | null;  // avg sleep minutes per night this calendar month
+  personalBestMins: number | null;
+  currentStreak:    number;  // nights
+  longestStreak:    number;  // nights
 }
 
 export type HealthConnectStatus =
@@ -426,13 +775,26 @@ export type HealthConnectStatus =
   | 'permission_missing'
   | 'not_installed'
   | 'not_supported';
+
+/**
+ * User-configurable goals stored in health_connect_meta.
+ * Loaded once on screen open, updated when user edits the goal field.
+ * This single goal value drives BOTH graph green-threshold colouring
+ * AND task auto-complete threshold for the section.
+ */
+export interface HealthGoalSettings {
+  stepsGoal:            number;   // default 10000
+  stepsGoalColorEnabled: boolean; // default true
+  sleepGoalHours:       number;   // default 8.0
+  sleepGoalColorEnabled: boolean; // default true
+}
 ```
 
 ---
 
 ## 5. Health Connect Actions
 
-**File:** `app/features/healthConnect/utils/healthConnectActions.ts` (new)
+**File:** `app/features/googlefit/utils/healthConnectActions.ts` (new)
 
 Main entry point for the feature. All Health Connect library calls go through
 here. No screen or component touches the HC library directly.
@@ -445,9 +807,29 @@ checkStatus(): Promise<HealthConnectStatus>
 requestPermissions(dataTypes: HealthDataType[]): Promise<boolean>
 
 getTodaySummary(): Promise<TodaySummary>
+// Returns steps count, sleep hours + stage breakdown (null if unavailable), workouts list
 
 sync(): Promise<void>
+// Reads HC, persists steps + sleep history rows, evaluates thresholds, auto-completes tasks
+
+getGoalSettings(): Promise<HealthGoalSettings>
+// Reads steps_goal, steps_goal_color_enabled, sleep_goal_hours, sleep_goal_color_enabled
+// from health_connect_meta. Returns defaults if not yet set.
+
+saveGoalSettings(settings: Partial<HealthGoalSettings>): Promise<void>
+// Upserts changed keys into health_connect_meta.
 ```
+
+### Sync trigger points
+
+`sync()` is called from three places:
+
+1. **App start** — called once in `App.tsx` (or `index.js`) after the DB is initialised,
+   before the main navigator mounts. Runs in the background (fire-and-forget) — does not
+   block app render.
+2. **AppState foreground** — called when `AppState` transitions to `'active'` (existing
+   catch-up path). Kept as a lightweight supplement.
+3. **Manual** — called from the "Sync Now" button on `HealthManagementScreen`.
 
 ### Sleep query window
 
@@ -498,11 +880,24 @@ sync():
 
   today = todayDateString()   // 'YYYY-MM-DD'
 
+  summary = getTodaySummary()  // single HC read covers all data types
+
+  // ── Persist history rows (steps + sleep only; workouts not stored) ────────
+  if summary.steps !== null:
+    healthConnectStorage.upsertStepsDay({
+      date: today, stepCount: summary.steps, goal: userStepGoal()
+    })
+
+  if summary.sleepHours !== null:
+    healthConnectStorage.upsertSleepDay({
+      date: today, durationMins: summary.sleepHours * 60,
+      goalHours: userSleepGoal(), stages: summary.sleepStages
+    })
+  // (upsert = INSERT OR REPLACE — safe to call on every sync)
+
+  // ── Task auto-completion ──────────────────────────────────────────────────
   mappings = healthConnectStorage.getAllEnabledMappings()
   // cross-joins with templates — orphaned mappings are filtered out automatically
-  if mappings.length === 0 → return
-
-  summary = getTodaySummary()  // single HC read covers all data types
 
   for each mapping of mappings:
     met = evaluateThreshold(mapping, summary)
@@ -522,6 +917,18 @@ sync():
 
   healthConnectStorage.setLastSyncedAt(Date.now())  // for "Last synced: X min ago" display only
 ```
+
+> **`userStepGoal()` / `userSleepGoal()`:** Read from `health_connect_meta` keys
+> `steps_goal` and `sleep_goal_hours` via `getGoalSettings()`. These are the same
+> values the user edits in the detail screens — one goal per section. Defaults are
+> 10,000 steps / 8.0 hours if the user has not set a value yet. Store the goal that
+> was active at the time of recording so streak calculations remain historically correct
+> even if the user later changes their goal.
+>
+> The step/sleep mappings in `health_connect_mappings` still hold their own
+> `step_goal` / `sleep_hours` threshold for `evaluateThreshold()`, but the global
+> goal in `health_connect_meta` is the canonical display goal used for history rows,
+> graph colouring, and streak calculations.
 
 ### evaluateThreshold()
 
@@ -737,46 +1144,81 @@ open so users understand the data may be a few seconds stale.
 | `permanentTaskActions.ts` | **None** | Untouched |
 | `taskActions.ts` | **None** | Called as a consumer, not modified |
 | `taskStorage.ts` | Add `getPendingInstanceByTemplateId(templateId, date)` | Single new export — Task feature owns its own SQL |
+| `healthConnectStorage.ts` | Add `upsertStepsDay()`, `getStepsHistory()`, `upsertSleepDay()`, `getSleepHistory()`, `getGoalSettings()`, `saveGoalSettings()` | History persistence + unified goal management |
 | `CreatePermanentTaskScreen.tsx` | **None** | Untouched |
 | `database.ts` (schema init) | Add `createHealthConnectSchema()` call | New schema only |
 | `useTasks.ts` | Subscribe to `DeviceEventEmitter('healthConnectSyncComplete')` → call `loadTasks()` | ~5 lines |
-| `MainNavigator.tsx` | Add `AppState` listener → `healthConnectActions.sync()` on foreground | ~5 lines |
+| `App.tsx` / `index.js` | Call `healthConnectActions.sync()` once after DB init (fire-and-forget) | App-start sync; does not block render |
+| `MainNavigator.tsx` | Add `AppState` listener → `healthConnectActions.sync()` on foreground (catch-up) | ~5 lines |
 | `index.js` | Register Headless JS task for background sync | ~4 lines |
 | `AndroidManifest.xml` | Add HC service declaration for Android 14+ battery exemption | ~8 lines |
-| `HealthManagementScreen.tsx` | Replace placeholder with real screen | New implementation |
+| `HealthManagementScreen.tsx` | Hub screen: status badge + three tappable section rows | New implementation |
+| `StepsDetailScreen.tsx` | New — full steps detail view | New file |
+| `SleepDetailScreen.tsx` | New — full sleep detail view | New file |
+| `WorkoutsDetailScreen.tsx` | New — workouts + mappings | New file |
+| `BrowseNavigator.tsx` (or equivalent) | Add routes for StepsDetailScreen, SleepDetailScreen, WorkoutsDetailScreen | Register new screens |
 
 ---
 
 ## 11. Directory Structure & New Files
 
 The Health Connect feature follows the same pattern as `app/features/permanentTask/`.
-All backend lives under `app/features/healthConnect/`. UI screens live in
+All backend lives under `app/features/googlefit/`. UI screens live in
 `app/screens/browse/`. Shared display components live in `app/components/healthConnect/`.
 
 ```
 app/
 ├── features/
-│   └── healthConnect/
+│   └── googlefit/
 │       ├── types/
-│       │   └── healthConnect.ts          # All HC-specific TS types + EXERCISE_TYPE_LABELS map
+│       │   └── healthConnect.ts          # All HC-specific TS types: HealthConnectMapping,
+│       │                                 # TodaySummary, WorkoutSession, HealthConnectStatus,
+│       │                                 # StepsDayRecord, SleepDayRecord, StepsStats, SleepStats,
+│       │                                 # SleepStageBreakdown, EXERCISE_TYPE_LABELS
 │       ├── utils/
 │       │   ├── healthConnectActions.ts   # checkStatus, requestPermissions, getTodaySummary, sync
-│       │   └── healthConnectUtils.ts     # evaluateThreshold, createDefaultInstance, pruneOrphanedMappings
+│       │   │                             # getGoalSettings, saveGoalSettings
+│       │   │                             # sync() writes history rows + evaluates thresholds
+│       │   ├── healthConnectUtils.ts     # evaluateThreshold, createDefaultInstance,
+│       │   │                             # pruneOrphanedMappings, computeStepsStats, computeSleepStats
 │       └── storage/
 │           ├── schema/
-│           │   └── healthConnect.ts      # DDL: health_connect_mappings + health_connect_meta
+│           │   └── healthConnect.ts      # DDL: health_connect_mappings, health_connect_meta,
+│           │                             #      health_steps_history, health_sleep_history
 │           └── healthConnectStorage.ts   # saveMapping, getAllEnabledMappings, deleteMapping,
 │                                         # getMappingById, setLastSyncedAt, getLastSyncedAt,
-│                                         # pruneOrphanedMappings
+│                                         # pruneOrphanedMappings,
+│                                         # upsertStepsDay, getStepsHistory(startDate, endDate),
+│                                         # upsertSleepDay, getSleepHistory(startDate, endDate),
+│                                         # getGoalSettings, saveGoalSettings
 │
 ├── components/
 │   └── healthConnect/
-│       ├── HealthConnectStatusBadge.tsx  # Connection status badge
-│       └── HealthSectionCard.tsx         # Per-data-type section card (summary + mapping rows)
+│       ├── HealthConnectStatusBadge.tsx  # Connection status badge (new — HC-specific)
+│       └── HealthSectionRow.tsx          # Tappable summary row used on the main hub screen
+│                                         # (icon + title + today's key stat + chevron)
+│
+│   # ── Reused from app/components/stats/ — no changes to these files ──────────
+│   #   WeekBarGraph        →  7-day chart in Steps + Sleep detail screens
+│   #   MonthCalendarGraph  →  monthly calendar in Steps + Sleep detail screens
+│   #   TimeRangePicker     →  Week/Month toggle in Steps + Sleep detail screens
+│   #   StreakCard          →  streak stats in Steps + Sleep detail screens
+│   #   CircularProgress    →  today's step progress ring in StepsDetailScreen
+│   #   CompletionSummaryCard → last-night sleep ring in SleepDetailScreen
+│   #
+│   # NOT needed (dropped from earlier plan):
+│   #   StepsSectionCard.tsx  — replaced by StepsDetailScreen (full screen)
+│   #   SleepSectionCard.tsx  — replaced by SleepDetailScreen (full screen)
+│   #   WorkoutsSectionCard.tsx — replaced by WorkoutsDetailScreen (full screen)
+│   #   HealthBarChart.tsx    — WeekBarGraph covers this entirely
+│   #   HealthStatsPanel.tsx  — StreakCard + inline row covers this
 │
 └── screens/
     └── browse/
-        ├── HealthManagementScreen.tsx    # Rewritten in place (was placeholder)
+        ├── HealthManagementScreen.tsx    # Hub: status badge + three HealthSectionRow tappable rows
+        ├── StepsDetailScreen.tsx         # Full steps view: ring + goal + toggle + charts + stats + mappings
+        ├── SleepDetailScreen.tsx         # Full sleep view: ring + goal + toggle + stage bar + charts + stats + mappings
+        ├── WorkoutsDetailScreen.tsx      # Today's sessions + mapping rows (no charts)
         └── HealthMappingEditor.tsx       # Add/edit/delete a single mapping
 ```
 
@@ -784,19 +1226,28 @@ app/
 
 | File | Purpose |
 |------|---------|
-| `features/healthConnect/types/healthConnect.ts` | `HealthConnectMapping`, `TodaySummary`, `WorkoutSession`, `HealthConnectStatus`, `HealthDataType`, `EXERCISE_TYPE_LABELS` |
-| `features/healthConnect/utils/healthConnectActions.ts` | `checkStatus()`, `requestPermissions()`, `getTodaySummary()` (with correct sleep window), `sync()` |
-| `features/healthConnect/utils/healthConnectUtils.ts` | `evaluateThreshold()`, `createDefaultInstance()`, `pruneOrphanedMappings()` (called from Health screen on open, not on app start) |
-| `features/healthConnect/storage/schema/healthConnect.ts` | `createHealthConnectSchema()` — DDL for both tables |
-| `features/healthConnect/storage/healthConnectStorage.ts` | `saveMapping()`, `getAllEnabledMappings()` (orphan-filtered), `getMappingById()`, `deleteMapping()`, `setLastSyncedAt()`, `getLastSyncedAt()` |
-| `components/healthConnect/HealthConnectStatusBadge.tsx` | Reusable status badge |
-| `components/healthConnect/HealthSectionCard.tsx` | Per-data-type card — today's summary + mapping rows + "Add" button |
-| `screens/browse/HealthManagementScreen.tsx` | Full Health screen — three section cards + status badge + Sync Now |
-| `screens/browse/HealthMappingEditor.tsx` | Template picker + threshold fields + exercise type picker (labels → SDK constants) + auto-schedule toggle |
+| `features/googlefit/types/healthConnect.ts` | All types: `HealthConnectMapping`, `TodaySummary`, `WorkoutSession`, `HealthConnectStatus`, `HealthDataType`, `StepsDayRecord`, `SleepDayRecord`, `StepsStats`, `SleepStats`, `SleepStageBreakdown`, `HealthGoalSettings`, `EXERCISE_TYPE_LABELS` |
+| `features/googlefit/utils/healthConnectActions.ts` | `checkStatus()`, `requestPermissions()`, `getTodaySummary()`, `sync()`, `getGoalSettings()`, `saveGoalSettings()` |
+| `features/googlefit/utils/healthConnectUtils.ts` | `evaluateThreshold()`, `createDefaultInstance()`, `pruneOrphanedMappings()`, `computeStepsStats(history)`, `computeSleepStats(history)` |
+| `features/googlefit/storage/schema/healthConnect.ts` | `createHealthConnectSchema()` — DDL for all four tables |
+| `features/googlefit/storage/healthConnectStorage.ts` | Mapping CRUD + meta + steps/sleep history upsert/query + `getGoalSettings()` / `saveGoalSettings()` |
+| `components/healthConnect/HealthConnectStatusBadge.tsx` | HC-specific status badge |
+| `components/healthConnect/HealthSectionRow.tsx` | Tappable row component for the hub screen |
+| `components/stats/detail/shared/WeekBarGraph` | **Reused as-is** — per-bar colour override via `DayData.color` where supported |
+| `components/stats/detail/shared/MonthCalendarGraph` | **Reused as-is** |
+| `components/stats/detail/shared/TimeRangePicker` | **Reused as-is** |
+| `components/stats/detail/shared/StreakCard` | **Reused as-is** |
+| `components/stats/CircularProgress` | **Reused as-is** |
+| `components/stats/detail/shared/CompletionSummaryCard` | **Reused as-is** |
+| `screens/browse/HealthManagementScreen.tsx` | Hub screen — status badge + three `HealthSectionRow` rows |
+| `screens/browse/StepsDetailScreen.tsx` | Full steps detail — ring + goal edit + colour toggle + charts + stats + mappings |
+| `screens/browse/SleepDetailScreen.tsx` | Full sleep detail — ring + goal edit + colour toggle + stage bar + charts + stats + mappings |
+| `screens/browse/WorkoutsDetailScreen.tsx` | Today's workouts + mapping rows (no charts, no stats) |
+| `screens/browse/HealthMappingEditor.tsx` | Template picker + threshold fields + auto-schedule toggle |
 
 ### Schema init
 
-`features/healthConnect/storage/schema/healthConnect.ts` exports
+`features/googlefit/storage/schema/healthConnect.ts` exports
 `createHealthConnectSchema()`. Called from `app/core/services/storage/database.ts`
 alongside all other `create*Schema()` calls.
 
@@ -858,58 +1309,85 @@ permissions upfront.
 |---|------|--------|
 | P1 | Verify Expo managed vs bare workflow compatibility. If bare needed, plan migration | `[ ]` |
 | P2 | Install `react-native-health-connect`, test basic HC read on physical Android device | `[ ]` |
-| P3 | Create `features/healthConnect/storage/schema/healthConnect.ts` — DDL for `health_connect_mappings` + `health_connect_meta` | `[ ]` |
+| P3 | Create `features/googlefit/storage/schema/healthConnect.ts` — DDL for `health_connect_mappings` + `health_connect_meta` | `[ ]` |
 | P4 | Wire `createHealthConnectSchema()` into `database.ts` init chain | `[ ]` |
 
 ### Phase 2 — Storage Layer
 
 | # | Task | Status |
 |---|------|--------|
-| D1 | Build `features/healthConnect/storage/healthConnectStorage.ts` — `saveMapping`, `getAllEnabledMappings` (orphan-filtered via INNER JOIN), `getMappingById`, `deleteMapping`, `setLastSyncedAt`, `getLastSyncedAt` | `[ ]` |
+| D1 | Build `features/googlefit/storage/healthConnectStorage.ts` — `saveMapping`, `getAllEnabledMappings` (orphan-filtered via INNER JOIN), `getMappingById`, `deleteMapping`, `setLastSyncedAt`, `getLastSyncedAt`, `getGoalSettings()`, `saveGoalSettings()` | `[ ]` |
 | D2 | Add `getPendingInstanceByTemplateId(templateId, date)` to `core/services/storage/taskStorage.ts` | `[ ]` |
+| D3 | Add `upsertStepsDay(record)` and `getStepsHistory(startDate, endDate)` to `healthConnectStorage.ts` | `[ ]` |
+| D4 | Add `upsertSleepDay(record)` and `getSleepHistory(startDate, endDate)` to `healthConnectStorage.ts` | `[ ]` |
 
 ### Phase 3 — Business Logic Layer
 
 | # | Task | Status |
 |---|------|--------|
-| S1 | Build `features/healthConnect/types/healthConnect.ts` — all types + `EXERCISE_TYPE_LABELS` map | `[ ]` |
+| S1 | Build `features/googlefit/types/healthConnect.ts` — all types including `HealthGoalSettings` | `[ ]` |
 | S2 | Build `healthConnectActions.checkStatus()` | `[ ]` |
 | S3 | Build `healthConnectActions.requestPermissions()` | `[ ]` |
-| S4 | Build `healthConnectActions.getTodaySummary()` — steps (`startTime >= today`), sleep (24h lookback, `endTime >= startOfToday` filter), workouts (`startTime >= today`) | `[ ]` |
-| S5 | Build `healthConnectUtils.evaluateThreshold()` — compares `exerciseType` using actual SDK values from `ExerciseSessionRecord.EXERCISE_TYPES`, not string keys | `[ ]` |
+| S4 | Build `healthConnectActions.getTodaySummary()` — steps (`startTime >= today`), sleep (24h lookback, `endTime >= startOfToday` filter, stage extraction), workouts (`startTime >= today`) | `[ ]` |
+| S5 | Build `healthConnectUtils.evaluateThreshold()` — uses `exerciseType` SDK values (integers), not string keys | `[ ]` |
 | S6 | Build `healthConnectUtils.createDefaultInstance()` — calls `taskActions.createTask()` | `[ ]` |
-| S7 | Build `healthConnectUtils.pruneOrphanedMappings()` — called from `HealthManagementScreen` on open, not on every app start | `[ ]` |
-| S8 | Build `healthConnectActions.sync()` — no date guard; emits `DeviceEventEmitter('healthConnectSyncComplete')` on finish | `[ ]` |
-| S9 | Subscribe to `healthConnectSyncComplete` in `useTasks.ts` to trigger `loadTasks()` | `[ ]` |
-| S10 | Wire `sync()` into `AppState` foreground listener in `MainNavigator.tsx` | `[ ]` |
-| S11 | Register Headless JS background task in `index.js`; schedule with WorkManager / `react-native-background-fetch`; add service declaration to `AndroidManifest.xml` | `[ ]` |
+| S7 | Build `healthConnectUtils.pruneOrphanedMappings()` — called from `HealthManagementScreen` on open only | `[ ]` |
+| S8 | Build `healthConnectUtils.computeStepsStats(history: StepsDayRecord[]): StepsStats` | `[ ]` |
+| S9 | Build `healthConnectUtils.computeSleepStats(history: SleepDayRecord[]): SleepStats` | `[ ]` |
+| S10 | Build `healthConnectActions.sync()` — reads HC, upserts steps + sleep history (using goal from `getGoalSettings()`), evaluates thresholds, auto-completes **today-only** task instances, emits `DeviceEventEmitter('healthConnectSyncComplete')` | `[ ]` |
+| S11 | Build `healthConnectActions.getGoalSettings()` / `saveGoalSettings()` — reads/writes `health_connect_meta` goal keys | `[ ]` |
+| S12 | Subscribe to `healthConnectSyncComplete` in `useTasks.ts` to trigger `loadTasks()` | `[ ]` |
+| S13 | Wire `sync()` as fire-and-forget call in `App.tsx` / `index.js` after DB init (app-start sync) | `[ ]` |
+| S14 | Wire `sync()` into `AppState` foreground listener in `MainNavigator.tsx` (supplementary catch-up) | `[ ]` |
+| S15 | Register Headless JS background task in `index.js`; schedule with WorkManager / `react-native-background-fetch`; add service declaration to `AndroidManifest.xml` | `[ ]` |
 
 ### Phase 4 — UI
+
+No new chart or stats primitives need to be built — existing stats components are
+reused directly. The new UI files below are full screens, not inline cards.
+
+All components must use `useTheme()` throughout — no hardcoded hex values.
+Test both light and dark modes on device before marking any UI task complete.
 
 | # | Task | Status |
 |---|------|--------|
 | U1 | Build `HealthConnectStatusBadge` component | `[ ]` |
-| U2 | Build `HealthSectionCard` component — today's summary + mapping rows + "Add" button | `[ ]` |
-| U3 | Build `HealthMappingEditor` — template picker, threshold fields, exercise type picker (human labels → SDK constants), auto-schedule toggle | `[ ]` |
-| U4 | Rewrite `HealthManagementScreen` — status badge + three section cards + Sync Now button + "Last synced: X" | `[ ]` |
+| U2 | Build `HealthSectionRow` — tappable summary row with icon + title + today's key stat + `›` chevron | `[ ]` |
+| U3 | Rewrite `HealthManagementScreen` — status badge + three `HealthSectionRow` rows (Steps / Sleep / Workouts) + Sync Now button + "Last synced: X min ago". Navigation to detail screens. | `[ ]` |
+| U4 | Build `StepsDetailScreen` — `CircularProgress` (green when goal met) + goal edit field + goal colour toggle + `TimeRangePicker` + `WeekBarGraph` (green bars for goal-met days) + `MonthCalendarGraph` + stats row + `StreakCard` + mapping rows + "Add" button | `[ ]` |
+| U5 | Build `SleepDetailScreen` — `CompletionSummaryCard` (green ring when goal met) + goal edit + colour toggle + stage mini-bar (hidden if no stages) + `TimeRangePicker` + `WeekBarGraph` (green bars for goal-met nights) + `MonthCalendarGraph` + stats row + `StreakCard` + mapping rows + "Add" button | `[ ]` |
+| U6 | Build `WorkoutsDetailScreen` — today's sessions list + mapping rows + "Add" button | `[ ]` |
+| U7 | Build `HealthMappingEditor` — template picker, threshold fields, exercise type picker (human labels → SDK integer constants), auto-schedule toggle | `[ ]` |
+| U8 | Register `StepsDetailScreen`, `SleepDetailScreen`, `WorkoutsDetailScreen` in the browse navigator | `[ ]` |
 
 ### Phase 5 — Testing
 
 | # | Task | Status |
 |---|------|--------|
-| T1 | Steps: add mapping → reach step goal during the day → verify background sync auto-completes | `[ ]` |
-| T2 | Sleep: log overnight sleep in Samsung Health → open app next morning → verify auto-complete | `[ ]` |
-| T3 | Sleep edge case: session starts 11 PM, ends 7 AM → verify counted for "today" (endTime filter) | `[ ]` |
-| T3b | Sleep extreme case: session starts 2 AM, ends 4 PM (14h) → verify 24h lookback catches it | `[ ]` |
-| T4 | Workout: log session → correct template completed; exercise type SDK value matches (verify integer vs string against installed library version) | `[ ]` |
-| T5 | Multiple templates same data type (Push / Pull / Leg day all → Workout) | `[ ]` |
-| T6 | `autoSchedule = true` with no instance scheduled → default created + completed | `[ ]` |
-| T7 | User manually completes task → background sync fires → task NOT double-completed | `[ ]` |
-| T8 | Open app twice same day after threshold met → task NOT double-completed | `[ ]` |
-| T9 | Permission denial → no crash, graceful no-op, Health screen shows "Grant" | `[ ]` |
-| T10 | Repeatable template → next occurrence scheduled correctly after HC auto-complete | `[ ]` |
-| T11 | Delete a template that has a mapping → orphan pruned on next sync → no errors | `[ ]` |
-| T12 | Permanent task UI (CreatePermanentTaskScreen etc.) unaffected — no HC fields visible | `[ ]` |
+| T1 | Steps: walk → today's count updates on app-start sync, ring turns green when goal met | `[ ]` |
+| T2 | Steps: week bar graph — bars for goal-met days are green, other days use accent colour | `[ ]` |
+| T3 | Steps: goal colour toggle off → all bars use accent colour regardless of goal | `[ ]` |
+| T4 | Steps: monthly view → calendar cells green for goal-met days when toggle on | `[ ]` |
+| T5 | Steps: week avg and month avg values match manual calculation | `[ ]` |
+| T6 | Steps: add mapping → reach step goal → task auto-completes (today's instance only) | `[ ]` |
+| T7 | Steps: task from yesterday with same template NOT completed by today's sync | `[ ]` |
+| T8 | Sleep: log overnight sleep → open app → last night ring shown, green when goal met | `[ ]` |
+| T9 | Sleep: week bar graph + monthly calendar green colouring mirrors goal status | `[ ]` |
+| T10 | Sleep: goal colour toggle off → all bars/cells revert to accent colour | `[ ]` |
+| T11 | Sleep: add mapping → sleep meets threshold → today's task auto-completes | `[ ]` |
+| T12 | Sleep edge case: session 11 PM–7 AM → counted for "today" (endTime filter) | `[ ]` |
+| T13 | Sleep extreme case: 14h session started yesterday afternoon, ended today → captured by 24h lookback | `[ ]` |
+| T14 | Sleep: no stage data → stage bar hidden, no crash | `[ ]` |
+| T15 | Workout: log session → sessions list shows correct type + duration | `[ ]` |
+| T16 | Workout: mapping completes today's instance, not yesterday's recurring instance | `[ ]` |
+| T17 | `autoSchedule = true` with no instance today → default created + completed | `[ ]` |
+| T18 | User manually completes task → next sync does NOT double-complete | `[ ]` |
+| T19 | Open app twice after threshold met → task NOT double-completed | `[ ]` |
+| T20 | Permission denial → no crash, Health screen shows "Grant" | `[ ]` |
+| T21 | Repeatable template → next occurrence scheduled correctly after HC auto-complete | `[ ]` |
+| T22 | Delete template with mapping → orphan invisible to sync, pruned when Health screen opens | `[ ]` |
+| T23 | Dark mode: all health screens / detail screens render correctly with theme colours | `[ ]` |
+| T24 | Light mode: same screens, verify no hardcoded colours bleed through | `[ ]` |
 
 ---
 
@@ -925,9 +1403,17 @@ permissions upfront.
 | Sleep extreme case (14h+ sleep) | 24h lookback covers sessions starting up to 24 hours before midnight — any realistic sleep duration is captured |
 | Exercise type mismatch (key string vs SDK value) | Types file documents that `exerciseType` must be the SDK *value* from `ExerciseSessionRecord.EXERCISE_TYPES`, not the key. Picker is built by iterating the SDK object directly at runtime. Verify integer vs string at install time. |
 | Stale task list after background sync | `sync()` emits `DeviceEventEmitter('healthConnectSyncComplete')`; `useTasks` subscribes and calls `loadTasks()` — UI updates immediately regardless of sync origin |
+| Steps/sleep history grows unboundedly | Add a periodic trim (e.g. keep last 90 days) inside `upsertStepsDay` / `upsertSleepDay`. Low priority — SQLite handles thousands of rows fine, but worth capping for cleanliness |
+| No sleep data on device | `getTodaySummary()` returns `sleepHours: null`; SleepSectionCard shows "No sleep data" rather than an empty chart. `upsertSleepDay` is not called for null values |
+| Sleep stage data absent (most devices) | `SleepStageBreakdown` is null; stage bar is hidden. All other sleep UI remains visible |
+| Streak calculation expensive on large history | `computeStepsStats` / `computeSleepStats` run in JS over at most 90 rows — trivially fast. No DB-side streak computation needed |
 | Orphaned mappings after template deletion | `getAllEnabledMappings()` INNER JOINs against `templates` — orphans are invisible to sync. `pruneOrphanedMappings()` cleans them when the Health screen opens. |
 | Double-completion (sync + manual, or two sync runs) | `getPendingInstanceByTemplateId()` filters `completed = 0` — handles both cases naturally, no date guard needed |
-| Android 14+ kills background job | Service declared in `AndroidManifest.xml` with health category; foreground sync on app open is always the guaranteed catch-up |
+| Android 14+ kills background job | Service declared in `AndroidManifest.xml` with health category; app-start sync is always the guaranteed catch-up |
 | Background sync native module complexity | Fall back to foreground-only sync if needed; show "Syncing…" indicator on task list to manage user expectation |
 | Multiple templates mapped to same workout type | Each mapping evaluated independently — all matching pending instances complete. Intended. |
 | Repeatability broken by HC completion | HC uses `taskActions.completeTask()` — identical to manual tap; `createNextRecurringInstance()` fires normally |
+| App-start sync blocks render | `sync()` is fire-and-forget — `then()` with no await. Never block the navigator mount on sync completion |
+| Goal colour toggle ignored on MonthCalendarGraph | `MonthCalendarGraph` already colours by fill ratio. When toggle is off, pass a neutral accent for the 100% colour; when on, pass `theme.colors.success` for cells with `completed >= total` |
+| WeekBarGraph does not support per-bar colour | Check at implementation time. If `DayData.color` is not supported, create a thin wrapper component `HealthWeekBarGraph` that renders coloured bars by conditional styling at the call site only — do not modify the original `WeekBarGraph` |
+| Dark mode: hardcoded colours in health screens | Enforce `useTheme()` for all colour references in health components. No hex literals outside theme tokens |
