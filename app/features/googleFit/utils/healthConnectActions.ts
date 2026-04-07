@@ -17,8 +17,9 @@
 //   - For each enabled mapping, calls evaluateThreshold(). If met:
 //       • Finds today's incomplete instance of the template.
 //       • If found → completes it.
-//       • If not found + autoSchedule=true → creates an instance then completes it.
-//       • If already completed → findTodaysPendingInstance returns null → no-op.
+//       • If not found + autoSchedule=true + NO instance exists today at all
+//         (hasTodaysInstance check) → creates an instance then completes it.
+//       • If an instance exists but is already completed → no-op (no duplicate).
 //   - Never blocks app render — callers fire-and-forget with .catch(console.warn).
 //
 // Architecture:
@@ -283,6 +284,30 @@ function findTodaysPendingInstance(permanentId: string): PendingInstanceRow | nu
   return rows.length > 0 ? rows[0] : null;
 }
 
+/**
+ * Returns true if ANY instance of `permanentId` exists today, regardless of
+ * completion status. Used to guard the autoSchedule branch so we never create
+ * a second instance on a day where one was already assigned (even if completed).
+ */
+function hasTodaysInstance(permanentId: string): boolean {
+  const now = new Date();
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(now);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const row = db.getFirstSync<{ id: string }>(
+    `SELECT t.id
+     FROM   tasks t
+     INNER JOIN template_instances ti ON ti.instanceId = t.id
+     WHERE  ti.templateId = ?
+       AND  t.due_date BETWEEN ? AND ?`,
+    [permanentId, dayStart.getTime(), dayEnd.getTime()],
+  );
+
+  return row !== null;
+}
+
 // =============================================================================
 // SYNC
 // =============================================================================
@@ -353,8 +378,8 @@ export async function sync(): Promise<void> {
           },
         });
         console.log(`[HC] Auto-completed instance ${pending.id} for template ${mapping.permanentId}`);
-      } else if (mapping.autoSchedule) {
-        // No instance today — create one then complete it
+      } else if (mapping.autoSchedule && !hasTodaysInstance(mapping.permanentId)) {
+        // No instance today (completed or otherwise) — create one then complete it
         const template = db.getFirstSync<{ templateTitle: string; category_id: string | null }>(
           'SELECT templateTitle, category_id FROM templates WHERE permanentId = ?',
           [mapping.permanentId],

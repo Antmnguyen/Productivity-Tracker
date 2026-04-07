@@ -265,13 +265,17 @@ export const SleepDetailScreen: React.FC<SleepDetailScreenProps> = ({ onBack }) 
     [selectedWeekStart],
   );
 
+  // count snapped to sleepGoal / 0 so % toggle shows binary 100% / 0%.
   const barData: DayData[] = useMemo(
     () =>
-      ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => ({
-        day,
-        count: selectedWeekRows.find(r => getDayOfWeek(r.date) === i)?.sleepHours ?? 0,
-        total: sleepGoal,
-      })),
+      ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => {
+        const actual = selectedWeekRows.find(r => getDayOfWeek(r.date) === i)?.sleepHours ?? 0;
+        return {
+          day,
+          count: actual >= sleepGoal ? sleepGoal : 0,
+          total: sleepGoal,
+        };
+      }),
     [selectedWeekRows, sleepGoal],
   );
 
@@ -303,30 +307,32 @@ export const SleepDetailScreen: React.FC<SleepDetailScreenProps> = ({ onBack }) 
   /**
    * Average sleep hours by weekday (Mon–Sun) across all stored history.
    *
-   * avgValue = mean sleep hours for that weekday across every recorded night.
-   * count    = number of recorded nights for that weekday.
+   * avgValue     = mean sleep hours for that weekday.
+   * count        = number of recorded nights for that weekday.
+   * goalMetCount = nights on that weekday where sleepHours ≥ sleepGoal.
    *
-   * HealthDayOfWeekCard uses these to:
-   *   Avg mode → bar height and label show the average hours for that weekday
-   *   % mode   → bar height and label show avgValue ÷ sleepGoal as a percentage
-   *
-   * Uses allRows (full history) so the average improves as sync data accumulates.
+   * HealthDayOfWeekCard modes:
+   *   Avg mode → average hours per weekday
+   *   % mode   → goal-met rate (goalMetCount ÷ count) per weekday
    */
   const dayOfWeekData: HealthDayOfWeekData[] = useMemo(() => {
     const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    const sums   = [0, 0, 0, 0, 0, 0, 0];
-    const counts = [0, 0, 0, 0, 0, 0, 0];
+    const sums    = [0, 0, 0, 0, 0, 0, 0];
+    const counts  = [0, 0, 0, 0, 0, 0, 0];
+    const goalMet = [0, 0, 0, 0, 0, 0, 0];
     for (const row of allRows) {
       const dow = getDayOfWeek(row.date);
       sums[dow]   += row.sleepHours;
       counts[dow] += 1;
+      if (row.sleepHours >= sleepGoal) goalMet[dow]++;
     }
     return DAY_LABELS.map((day, i) => ({
       day,
-      avgValue: counts[i] > 0 ? sums[i] / counts[i] : 0,
-      count: counts[i],
+      avgValue:     counts[i] > 0 ? sums[i] / counts[i] : 0,
+      count:        counts[i],
+      goalMetCount: goalMet[i],
     }));
-  }, [allRows]);
+  }, [allRows, sleepGoal]);
 
   // ── Goal edit handlers ─────────────────────────────────────────────────────
 

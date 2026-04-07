@@ -76,151 +76,30 @@ synced. Run them in order — earlier tests cover the plumbing that later tests 
 
 ---
 
-## Bug 3 — Auto-completer creates a duplicate instance when task is already completed today
+## ~~Bug 3 — Auto-completer creates a duplicate instance when task is already completed today~~ ✅ FIXED
 
-**File:** `app/features/googleFit/utils/healthConnectActions.ts` — `findTodaysPendingInstance()`
-
-**Symptom:** If a user manually completes a mapped task and then a sync fires (app foreground or
-background), the sync creates a brand-new instance of the task and auto-completes it. The task
-list shows two completed entries for the same template on the same day. This occurs if we sync twice as well.
-
-**Root cause:** `findTodaysPendingInstance()` queries `WHERE t.completed = 0`. When the existing
-instance is already completed, it returns `null`. The sync then falls through to the `autoSchedule`
-branch, which unconditionally creates and completes a new instance.
-
-**Fix:**
-
-Replace `findTodaysPendingInstance` with a two-part check:
-
-1. Add `findTodaysAnyInstance()` — same query but **without** the `completed = 0` filter:
-   ```ts
-   function findTodaysAnyInstance(permanentId: string): boolean {
-     const now = new Date();
-     const dayStart = new Date(now); dayStart.setHours(0,0,0,0);
-     const dayEnd   = new Date(now); dayEnd.setHours(23,59,59,999);
-
-     const row = db.getFirstSync<{ id: string }>(
-       `SELECT t.id
-        FROM   tasks t
-        INNER JOIN template_instances ti ON ti.instanceId = t.id
-        WHERE  ti.templateId = ?
-          AND  t.due_date BETWEEN ? AND ?`,
-       [permanentId, dayStart.getTime(), dayEnd.getTime()]
-     );
-     return row !== null;
-   }
-   ```
-
-2. In `sync()`, guard the `autoSchedule` branch with this check:
-   ```ts
-   const pending = findTodaysPendingInstance(mapping.permanentId);
-
-   if (pending) {
-     await completeTask({ ... });
-   } else if (mapping.autoSchedule && !findTodaysAnyInstance(mapping.permanentId)) {
-     // Only create a new instance if NONE exists today (completed or not)
-     const created = await createTask(...);
-     await completeTask(created);
-   }
-   // If an instance exists but is already completed → do nothing
-   ```
+**Fix applied 2026-04-06:**
+- Added `hasTodaysInstance(permanentId)` in `healthConnectActions.ts` — queries tasks + template_instances for today's window with **no** `completed` filter, returns `boolean`
+- `autoSchedule` branch in `sync()` now guarded: `else if (mapping.autoSchedule && !hasTodaysInstance(mapping.permanentId))`
+- Result: if an instance exists today (completed or pending), the sync leaves it alone; only creates a new instance when truly none exists
 
 ---
 
-## Bug 4 — WeekBarGraph `%` mode shows partial percentage for health data (should be 100% or 0%)
+## ~~Bug 4 — WeekBarGraph `%` mode shows partial percentage for health data (should be 100% or 0%)~~ ✅ FIXED
 
-**Screens affected:** `StepsDetailScreen`, `SleepDetailScreen` (WeekBarGraph % toggle only)
-
-**Symptom:** In % mode the bar label shows e.g. `84%` for a day where the user walked 8,400 of
-10,000 steps. For health goals the meaningful question is binary: "Did I hit my goal today?"
-not "What fraction of my goal did I reach?". The user wants `100%` or `0%`.
-
-**Root cause:** `WeekBarGraph` computes `safePct(count, total)` for the % label. The health
-screens pass `count = actual steps` and `total = stepsGoal`, so partial percentages are produced.
-
-**Fix — health screens only (do not change WeekBarGraph itself):**
-
-Transform `barData` so that in the `count` field the value is already snapped to the goal:
-```ts
-const barData: DayData[] = useMemo(
-  () =>
-    ['M','T','W','T','F','S','S'].map((day, i) => {
-      const actual = weekRows.find(r => getDayOfWeek(r.date) === i)?.steps ?? 0;
-      return {
-        day,
-        count: actual >= stepsGoal ? stepsGoal : 0,   // snap: either full goal or zero
-        total: stepsGoal,
-      };
-    }),
-  [weekRows, stepsGoal]
-);
-```
-
-With `count = stepsGoal` when met, `safePct(stepsGoal, stepsGoal) = 100%`.
-With `count = 0` when not met, the label shows `0%`.
-
-The bar height in Count mode will be full-height or absent — which is acceptable because
-Count mode is less meaningful for health data (actual step counts are better read from the
-Avg chart below). If full Count-mode bars with actual values are still desired, a separate
-`rawCount` field could be threaded through, but that requires modifying `WeekBarGraph`. The
-simplest ship is to accept this trade-off or hide the Count/% toggle entirely on health screens
-and use Avg/% naming in the WeekBarGraph title via a prop.
-
-Apply the same snap logic to `SleepDetailScreen` with `sleepHours >= sleepGoal`.
+**Fix applied 2026-04-06:**
+- `barData` in both `StepsDetailScreen` and `SleepDetailScreen` now snaps `count` to `goal` (when met) or `0` (when not met)
+- `safePct(goal, goal) = 100%`, `safePct(0, goal) = 0%` — WeekBarGraph unchanged
+- Bar height in Count mode is full or absent, which correctly visualises a binary daily goal
 
 ---
 
-## Bug 5 — `HealthDayOfWeekCard` % mode should show goal-met rate, not avg-as-%-of-goal
+## ~~Bug 5 — `HealthDayOfWeekCard` % mode should show goal-met rate, not avg-as-%-of-goal~~ ✅ FIXED
 
-**Screens affected:** `StepsDetailScreen`, `SleepDetailScreen` (HealthDayOfWeekCard % toggle)
-
-**Symptom:** In % mode the card shows "What percentage of my goal do I average on Mondays?"
-(e.g. 84% if average Monday steps are 8,400/10,000). The user wants "What percentage of
-Mondays did I actually hit my goal?" (e.g. 60% if goal was met on 3 of 5 Mondays).
-
-**Root cause:** `HealthDayOfWeekCard` only receives `avgValue` and computes
-`Math.round((avgValue / goal) * 100)` for the % label and bar height. It has no knowledge
-of how many days the goal was actually met for that weekday.
-
-**Fix:**
-
-1. Add `goalMetCount` to `HealthDayOfWeekData`:
-   ```ts
-   export interface HealthDayOfWeekData {
-     day: string;
-     avgValue: number;
-     count: number;
-     goalMetCount: number;   // ← new: days this weekday where goal was met
-   }
-   ```
-
-2. Populate it in the screens' `useMemo`:
-   ```ts
-   // Steps
-   if (row.steps >= stepsGoal) goalMet[dow]++;
-
-   // Sleep
-   if (row.sleepHours >= sleepGoal) goalMet[dow]++;
-
-   return DAY_LABELS.map((day, i) => ({
-     day,
-     avgValue: counts[i] > 0 ? sums[i] / counts[i] : 0,
-     count: counts[i],
-     goalMetCount: goalMet[i],
-   }));
-   ```
-
-3. In `HealthDayOfWeekCard`'s `DayBar`, switch the % calculation:
-   ```ts
-   // % mode: goal-met rate (goalMetCount ÷ count), not avgValue ÷ goal
-   if (mode === 'percent') {
-     const rate = item.count > 0 ? item.goalMetCount / item.count : 0;
-     barHeight = Math.max(rate * BAR_MAX_HEIGHT, item.goalMetCount > 0 ? BAR_MIN_HEIGHT : BAR_MIN_HEIGHT);
-     valueLabel = `${Math.round(rate * 100)}%`;
-   }
-   ```
-
-4. Update `bestDayIndex` in % mode to rank by `goalMetCount / count` rather than
-   `avgValue / goal`.
-
-5. Update the footer to read "Goal met most often: Monday" in % mode.
+**Fix applied 2026-04-06:**
+- `goalMetCount: number` added to `HealthDayOfWeekData` interface (`HealthDayOfWeekCard.tsx`)
+- Both screens' `dayOfWeekData` useMemo now tracks `goalMet[dow]++` when the daily goal is met, and includes `goalMetCount` in each entry; deps array updated to include `stepsGoal`/`sleepGoal`
+- `DayBar` % mode now uses `goalMetRate = goalMetCount / count`; bar height = `rate × BAR_MAX_HEIGHT`, label = `Math.round(rate × 100)%`
+- `bestDayIndex` % branch now ranks by `goalMetCount / count`
+- Card title in % mode: `GOAL MET RATE BY DAY OF THE WEEK (ALL TIME)`
+- Footer in % mode: `Goal met most often: [day]`

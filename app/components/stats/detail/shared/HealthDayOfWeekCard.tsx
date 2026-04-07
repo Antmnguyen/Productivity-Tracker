@@ -68,6 +68,12 @@ export interface HealthDayOfWeekData {
   avgValue: number;
   /** Number of recorded days that contribute to avgValue. */
   count: number;
+  /**
+   * Number of days this weekday where the goal was met (steps ≥ stepsGoal
+   * or sleepHours ≥ sleepGoal). Used by % mode to show goal-met rate
+   * (goalMetCount ÷ count) rather than avgValue ÷ goal.
+   */
+  goalMetCount: number;
 }
 
 type DisplayMode = 'avg' | 'percent';
@@ -125,14 +131,15 @@ function formatValue(value: number, unit: 'steps' | 'hours'): string {
   return formatHoursCompact(value);
 }
 
-function bestDayIndex(data: HealthDayOfWeekData[], mode: DisplayMode, goal: number): number {
+function bestDayIndex(data: HealthDayOfWeekData[], mode: DisplayMode): number {
   if (mode === 'percent') {
-    const pcts = data.map(d => (d.count > 0 && goal > 0 ? d.avgValue / goal : -1));
-    const max  = Math.max(...pcts);
+    // Rank by goal-met rate: goalMetCount ÷ count
+    const rates = data.map(d => (d.count > 0 ? d.goalMetCount / d.count : -1));
+    const max   = Math.max(...rates);
     if (max <= 0) return -1;
-    return pcts.indexOf(max);
+    return rates.indexOf(max);
   }
-  // avg mode: highest raw average
+  // Avg mode: highest raw average
   const max = Math.max(...data.map(d => d.avgValue));
   if (max === 0) return -1;
   return data.findIndex(d => d.avgValue === max);
@@ -158,12 +165,15 @@ const DayBar: React.FC<DayBarProps> = ({ item, maxAvg, goal, unit, color, isBest
 
   const hasData = item.count > 0 && item.avgValue > 0;
 
+  // Goal-met rate for % mode: how often was the goal hit on this weekday?
+  const goalMetRate = item.count > 0 ? item.goalMetCount / item.count : 0;
+
   // ── Bar height ──────────────────────────────────────────────────────────────
   const barHeight = (() => {
     if (!hasData) return BAR_MIN_HEIGHT;
-    if (mode === 'percent' && goal > 0) {
-      // Cap at BAR_MAX_HEIGHT when at or above goal
-      return Math.min(Math.max((item.avgValue / goal) * BAR_MAX_HEIGHT, BAR_MIN_HEIGHT), BAR_MAX_HEIGHT);
+    if (mode === 'percent') {
+      // Scale to goal-met rate — full bar = 100% of days goal was met
+      return Math.max(goalMetRate * BAR_MAX_HEIGHT, BAR_MIN_HEIGHT);
     }
     // Avg mode: scale to tallest bar
     return Math.max((item.avgValue / Math.max(maxAvg, 1)) * BAR_MAX_HEIGHT, BAR_MIN_HEIGHT);
@@ -172,8 +182,8 @@ const DayBar: React.FC<DayBarProps> = ({ item, maxAvg, goal, unit, color, isBest
   // ── Value label ─────────────────────────────────────────────────────────────
   const valueLabel = (() => {
     if (!hasData) return '–';
-    if (mode === 'percent' && goal > 0) {
-      return `${Math.round((item.avgValue / goal) * 100)}%`;
+    if (mode === 'percent') {
+      return `${Math.round(goalMetRate * 100)}%`;
     }
     return formatValue(item.avgValue, unit);
   })();
@@ -223,7 +233,7 @@ export const HealthDayOfWeekCard: React.FC<HealthDayOfWeekCardProps> = ({
   const [mode, setMode] = useState<DisplayMode>('avg');
 
   const maxAvg = Math.max(...data.map(d => d.avgValue), 1);
-  const best   = bestDayIndex(data, mode, goal);
+  const best   = bestDayIndex(data, mode);
   const bestName = best >= 0 ? FULL_DAY_NAMES[best] : null;
 
   const unitLabel = unit === 'steps' ? 'STEPS' : 'SLEEP HOURS';
@@ -236,7 +246,7 @@ export const HealthDayOfWeekCard: React.FC<HealthDayOfWeekCardProps> = ({
         <Text style={styles.sectionLabel}>
           {mode === 'avg'
             ? `AVG ${unitLabel} BY DAY OF THE WEEK (ALL TIME)`
-            : `AVG % OF GOAL BY DAY OF THE WEEK (ALL TIME)`}
+            : `GOAL MET RATE BY DAY OF THE WEEK (ALL TIME)`}
         </Text>
 
         <View style={styles.toggle}>
@@ -281,7 +291,7 @@ export const HealthDayOfWeekCard: React.FC<HealthDayOfWeekCardProps> = ({
       {/* ── Best day footer ────────────────────────────────────────────────── */}
       {bestName && (
         <Text style={styles.bestDayLabel}>
-          {mode === 'avg' ? 'Highest avg: ' : 'Closest to goal: '}
+          {mode === 'avg' ? 'Highest avg: ' : 'Goal met most often: '}
           <Text style={{ color, fontWeight: '700' }}>{bestName}</Text>
         </Text>
       )}

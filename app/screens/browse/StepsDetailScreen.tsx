@@ -313,13 +313,20 @@ export const StepsDetailScreen: React.FC<StepsDetailScreenProps> = ({ onBack }) 
     [selectedWeekStart],
   );
 
+  // count is snapped to stepsGoal (goal met) or 0 (goal not met) so that the
+  // WeekBarGraph % toggle shows binary 100% / 0% rather than partial percentages.
+  // Bar height in Count mode reflects met/not-met at full or zero height, which
+  // is the correct visual for a binary daily goal.
   const barData: DayData[] = useMemo(
     () =>
-      ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => ({
-        day,
-        count: selectedWeekRows.find(r => getDayOfWeek(r.date) === i)?.steps ?? 0,
-        total: stepsGoal,
-      })),
+      ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => {
+        const actual = selectedWeekRows.find(r => getDayOfWeek(r.date) === i)?.steps ?? 0;
+        return {
+          day,
+          count: actual >= stepsGoal ? stepsGoal : 0,
+          total: stepsGoal,
+        };
+      }),
     [selectedWeekRows, stepsGoal],
   );
 
@@ -362,20 +369,23 @@ export const StepsDetailScreen: React.FC<StepsDetailScreenProps> = ({ onBack }) 
    * Uses allRows (full history) so the average improves as sync data accumulates.
    */
   const dayOfWeekData: HealthDayOfWeekData[] = useMemo(() => {
-    const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    const sums   = [0, 0, 0, 0, 0, 0, 0];
-    const counts = [0, 0, 0, 0, 0, 0, 0];
+    const DAY_LABELS  = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    const sums        = [0, 0, 0, 0, 0, 0, 0];
+    const counts      = [0, 0, 0, 0, 0, 0, 0];
+    const goalMet     = [0, 0, 0, 0, 0, 0, 0];
     for (const row of allRows) {
       const dow = getDayOfWeek(row.date);
       sums[dow]   += row.steps;
       counts[dow] += 1;
+      if (row.steps >= stepsGoal) goalMet[dow]++;
     }
     return DAY_LABELS.map((day, i) => ({
       day,
-      avgValue: counts[i] > 0 ? sums[i] / counts[i] : 0,
-      count: counts[i],
+      avgValue:     counts[i] > 0 ? sums[i] / counts[i] : 0,
+      count:        counts[i],
+      goalMetCount: goalMet[i],
     }));
-  }, [allRows]);
+  }, [allRows, stepsGoal]);
 
   // ==========================================================================
   // GOAL EDIT HANDLERS
