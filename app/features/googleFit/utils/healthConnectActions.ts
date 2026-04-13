@@ -35,6 +35,7 @@ import {
   getSdkStatus,
   requestPermission,
   readRecords,
+  aggregateGroupByPeriod,
   SdkAvailabilityStatus,
 } from 'react-native-health-connect';
 import { DeviceEventEmitter } from 'react-native';
@@ -132,20 +133,23 @@ export async function getTodaySummary(): Promise<TodaySummary> {
   const nowISO = now.toISOString();
 
   // ── Steps ──────────────────────────────────────────────────────────────────
+  // Use the aggregate API (not raw records) so Health Connect deduplicates
+  // overlapping records from multiple sources (phone, Wear OS, third-party apps).
+  // Raw readRecords would sum every interval independently and double-count steps.
   let steps = 0;
   try {
-    const stepsResult = await readRecords('Steps', {
+    const stepsAgg = await aggregateGroupByPeriod({
+      recordType: 'Steps',
       timeRangeFilter: {
         operator: 'between',
         startTime: todayStart,
         endTime: nowISO,
       },
+      timeRangeSlicer: { period: 'DAYS', length: 1 },
     });
-    for (const record of stepsResult.records) {
-      steps += (record as any).count ?? 0;
-    }
+    steps = stepsAgg[0]?.result.COUNT_TOTAL ?? 0;
   } catch (e) {
-    console.warn('[HC] Steps read failed:', e);
+    console.warn('[HC] Steps aggregate failed:', e);
   }
 
   // ── Sleep ──────────────────────────────────────────────────────────────────
@@ -343,8 +347,11 @@ export async function sync(): Promise<void> {
 
   const today = toLocalDateString(new Date());
 
-  // Persist history regardless of mappings so stats are always up to date
-  upsertStepsForDate(today, summary.steps);
+  // Persist history regardless of mappings so stats are always up to date.
+  // Guard against a failed HC read returning 0 and overwriting a valid stored value.
+  if (summary.steps > 0) {
+    upsertStepsForDate(today, summary.steps);
+  }
   if (summary.sleepHours > 0) {
     upsertSleepForDate(today, summary.sleepHours);
   }

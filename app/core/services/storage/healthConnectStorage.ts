@@ -199,8 +199,12 @@ export interface StepsDayRecord {
  */
 export function upsertStepsForDate(date: string, steps: number): void {
   db.runSync(
-    `INSERT OR REPLACE INTO health_steps_log (date, steps, synced_at)
-     VALUES (?, ?, ?)`,
+    `INSERT INTO health_steps_log (date, steps, synced_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(date) DO UPDATE SET
+       steps     = MAX(steps, excluded.steps),
+       synced_at = excluded.synced_at
+     WHERE excluded.steps > 0`,
     [date, steps, Date.now()]
   );
 }
@@ -251,8 +255,12 @@ export interface SleepDayRecord {
  */
 export function upsertSleepForDate(date: string, sleepHours: number): void {
   db.runSync(
-    `INSERT OR REPLACE INTO health_sleep_log (date, sleep_hours, synced_at)
-     VALUES (?, ?, ?)`,
+    `INSERT INTO health_sleep_log (date, sleep_hours, synced_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(date) DO UPDATE SET
+       sleep_hours = MAX(sleep_hours, excluded.sleep_hours),
+       synced_at   = excluded.synced_at
+     WHERE excluded.sleep_hours > 0`,
     [date, sleepHours, Date.now()]
   );
 }

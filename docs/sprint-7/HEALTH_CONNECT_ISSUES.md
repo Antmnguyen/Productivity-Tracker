@@ -1,5 +1,5 @@
 # Health Connect — Known Issues
-**Last updated:** 2026-04-06
+**Last updated:** 2026-04-12
 
 ---
 
@@ -112,6 +112,115 @@ synced. Run them in order — earlier tests cover the plumbing that later tests 
 - [ ] Category detail week bar graph — bars still colour correctly
 - [ ] Permanent task detail week bar graph — bars still colour correctly
 - [ ] Stacked-segment bars (permanent + one-off split) — still render correctly (code path unchanged, `barColor` only applies to the solid-bar branch)
+
+---
+
+## Bug 6 — Steps data saved today gets wiped by a later failed sync ✅ FIXED
+
+**Symptom:** Steps (and sometimes sleep) data is visible today but disappears the next day. The data was correctly read from Health Connect and displayed — but yesterday's bar in the chart shows 0 the following day. Happens inconsistently (not every day), which is the tell.
+
+**Root cause:** `getTodaySummary()` initialises `steps = 0` at the top and silently swallows HC read errors:
+
+```ts
+// getTodaySummary() — healthConnectActions.ts
+let steps = 0;
+try {
+  const stepsResult = await readRecords('Steps', { ... });
+  for (const record of stepsResult.records) steps += record.count ?? 0;
+} catch (e) {
+  console.warn('[HC] Steps read failed:', e);
+  // steps stays 0 — no rethrow
+}
+```
+
+Then `sync()` unconditionally upserts whatever value is returned — including 0:
+
+```ts
+// sync() — healthConnectActions.ts
+upsertStepsForDate(today, summary.steps);   // ← saves 0 if HC read failed
+if (summary.sleepHours > 0) {              // ← sleep has a guard; steps does not
+  upsertSleepForDate(today, summary.sleepHours);
+}
+```
+
+Sync fires multiple times per day (app start, every foreground, background fetch every 15 min). If any one of those syncs fails to read steps from HC (permissions not ready, HC flaking, headless background task before DB is fully warm), it writes 0 and overwrites the previously correct value. Next day, yesterday shows 0.
+
+**Fix plan — `sync()` in `healthConnectActions.ts` only:**
+
+1. **Add a `> 0` guard to the steps upsert**, matching the existing sleep guard:
+   ```ts
+   if (summary.steps > 0) {
+     upsertStepsForDate(today, summary.steps);
+   }
+   ```
+   This stops a failed HC read (returning 0) from ever overwriting a valid stored count.
+
+2. **Better: use a MAX-wins upsert for steps** so the stored value can only ever increase within a day (steps only go up). Change `upsertStepsForDate` in `healthConnectStorage.ts` from `INSERT OR REPLACE` to:
+   ```sql
+   INSERT INTO health_steps_log (date, steps, synced_at)
+   VALUES (?, ?, ?)
+   ON CONFLICT(date) DO UPDATE SET
+     steps     = MAX(steps, excluded.steps),
+     synced_at = excluded.synced_at
+   WHERE excluded.steps > 0;
+   ```
+   - `WHERE excluded.steps > 0` — never overwrites a stored value with 0.
+   - `MAX(steps, excluded.steps)` — never decreases a day's count (a later partial sync returning 5000 steps won't overwrite a stored 10000).
+   - First insert for a date is unaffected (no conflict row to compare).
+
+3. **Apply the same MAX-wins upsert to sleep** for consistency:
+   ```sql
+   INSERT INTO health_sleep_log (date, sleep_hours, synced_at)
+   VALUES (?, ?, ?)
+   ON CONFLICT(date) DO UPDATE SET
+     sleep_hours = MAX(sleep_hours, excluded.sleep_hours),
+     synced_at   = excluded.synced_at
+   WHERE excluded.sleep_hours > 0;
+   ```
+   The existing `> 0` guard in `sync()` can stay — defence in depth.
+
+**Files to change:**
+- `app/core/services/storage/healthConnectStorage.ts` — `upsertStepsForDate` and `upsertSleepForDate` SQL only.
+- `app/features/googleFit/utils/healthConnectActions.ts` — optionally add `if (summary.steps > 0)` guard as a belt-and-suspenders check.
+
+**Fix applied 2026-04-12:**
+- `upsertStepsForDate` in `healthConnectStorage.ts` — changed from `INSERT OR REPLACE` to `INSERT … ON CONFLICT DO UPDATE SET steps = MAX(steps, excluded.steps) WHERE excluded.steps > 0`. Stored value can never decrease and can never be overwritten by 0.
+- `upsertSleepForDate` in `healthConnectStorage.ts` — same MAX-wins pattern applied.
+- `sync()` in `healthConnectActions.ts` — added `if (summary.steps > 0)` guard before the steps upsert call (belt-and-suspenders; sleep already had this guard).
+
+**Test:** Walk enough to hit a real step count. Note the count in the app. Reboot the device (forces a cold background-fetch sync). Open the app the next day. Confirm yesterday's bar shows the correct count, not 0.
+
+---
+
+## Bug 7 — Steps are double-counted because sync uses raw session records ✅ FIXED
+
+**Symptom:** Today's step count shown in the ring and stats is roughly 2× (or more) the actual step count reported by the Health Connect app. The discrepancy grows through the day as more raw records accumulate.
+
+**Root cause:** `sync()` currently reads steps using the raw `StepsRecord` history API and sums all records whose time window overlaps the target day. Health Connect stores multiple overlapping records from different sources (phone pedometer, Wear OS, third-party apps). Summing raw records double- or triple-counts steps that are already merged inside Health Connect.
+
+**Fix plan:**
+1. **Switch to the Health Connect aggregate API for steps.** Replace the raw `readRecords('Steps', ...)` call in `sync()` with `aggregateGroupByPeriod` (or `aggregate`) using the `STEPS_COUNT_TOTAL` metric and a `PERIOD_DAY` bucket. Health Connect deduplicates and merges overlapping sources automatically when using the aggregate endpoint.
+   ```ts
+   // Before (raw — double-counts):
+   const raw = await readRecords('Steps', { timeRangeFilter });
+   const total = raw.reduce((sum, r) => sum + r.count, 0);
+
+   // After (aggregate — deduped):
+   const result = await aggregateGroupByPeriod({
+     metrics: [STEPS_COUNT_TOTAL],
+     timeRangeFilter,
+     timeRangeSlicer: { duration: 'DAYS', count: 1 },
+   });
+   const total = result[0]?.result[STEPS_COUNT_TOTAL] ?? 0;
+   ```
+2. **Apply the same pattern to the 30-day backfill** (Bug 6 fix) — use `aggregateGroupByPeriod` with a 30-day range and `PERIOD_DAY` bucketing to get one deduplicated value per day in a single call.
+3. **Do not change sleep reads** — sleep uses session-based records which do not overlap in the same way; raw `SleepSessionRecord` reads are correct for sleep.
+**Fix applied 2026-04-12:**
+- Added `aggregateGroupByPeriod` to the `react-native-health-connect` import in `healthConnectActions.ts`.
+- Replaced the `readRecords('Steps', ...)` loop in `getTodaySummary()` with `aggregateGroupByPeriod({ recordType: 'Steps', timeRangeSlicer: { period: 'DAYS', length: 1 } })`. Result key is `COUNT_TOTAL` on the first (and only) bucket.
+- Sleep reads remain as raw `SleepSession` records — sleep sessions don't overlap in the same way, so raw reads are correct there.
+
+**Test:** Compare the value stored in `health_steps_log` after a sync against the total shown in the Health Connect app's own UI — they should match within a few steps.
 
 ---
 
