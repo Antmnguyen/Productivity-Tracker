@@ -73,3 +73,10 @@ Seamlessly bridge the gap between physical health and productivity by mapping bi
 * `app/theme/` — Theme providers and Dark Mode styling.
 
 ---
+
+## Gallery
+
+| | | | | |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="preview/1000003957.jpg" width="160"> | <img src="preview/1000003958.jpg" width="160"> | <img src="preview/1000003959.jpg" width="160"> | <img src="preview/1000003960.jpg" width="160"> | <img src="preview/1000003961.jpg" width="160"> |
+| <img src="preview/1000003962.jpg" width="160"> | <img src="preview/1000003964.jpg" width="160"> | <img src="preview/1000003965.jpg" width="160"> | <img src="preview/1000003966.jpg" width="160"> | <img src="preview/1000003967.jpg" width="160"> |
